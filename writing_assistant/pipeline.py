@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import difflib
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -12,6 +13,7 @@ from writing_assistant.passes import (
     PassResult,
     TonePass,
 )
+from writing_assistant.types import LLMBackend, Pass, RewriteResult
 
 _PASS_REGISTRY: dict[str, Any] = {
     "clarity": ClarityPass,
@@ -38,7 +40,7 @@ class PipelineResult:
             self.final_text = self.pass_results[-1].rewritten
 
 
-class Pipeline:
+class LegacyPipeline:
     def __init__(self, config: PipelineConfig, backend: Any) -> None:
         self.config = config
         self.backend = backend
@@ -52,3 +54,39 @@ class Pipeline:
             results.append(result)
             current = result.rewritten
         return PipelineResult(pass_results=results, final_text=current)
+
+
+class Pipeline:
+    """Multi-pass rewrite pipeline accepting Pass dataclass instances."""
+
+    def __init__(self, passes: list[Pass], backend: LLMBackend) -> None:
+        self.passes = passes
+        self.backend = backend
+
+    def run(self, text: str) -> list[RewriteResult]:
+        results: list[RewriteResult] = []
+        current = text
+        for i, p in enumerate(self.passes):
+            if p.metadata.get("adversarial"):
+                history = "\n\n".join(
+                    f"[{self.passes[j].name}]\n{results[j].revised}"
+                    for j in range(len(results))
+                )
+                prompt = (
+                    f"{p.instructions}\n\n"
+                    f"Original text:\n{text}\n\n"
+                    f"Accumulated rewrites:\n{history}\n\n"
+                    f"Current text:\n{current}"
+                )
+            else:
+                prompt = f"{p.instructions}\n\nText:\n{current}"
+            revised = self.backend.generate(prompt)
+            diff = "".join(difflib.unified_diff(
+                current.splitlines(keepends=True),
+                revised.splitlines(keepends=True),
+                fromfile="input",
+                tofile="revised",
+            ))
+            results.append(RewriteResult(original=current, revised=revised, diff=diff))
+            current = revised
+        return results

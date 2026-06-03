@@ -68,3 +68,16 @@ class AdversarialPass(_BasePass):
         "redundancy, and stylistic flaws. Then produce an improved version that addresses each "
         "identified weakness. Return only the improved text."
     )
+
+
+from writing_assistant.types import Pass  # noqa: E402
+
+CLARITY = Pass(name="clarity", instructions=ClarityPass.INSTRUCTIONS)
+TONE = Pass(name="tone", instructions=TonePass.INSTRUCTIONS)
+CONCISENESS = Pass(name="conciseness", instructions=ConcisenessPass.INSTRUCTIONS)
+CONSISTENCY = Pass(name="consistency", instructions=ConsistencyPass.INSTRUCTIONS)
+ADVERSARIAL = Pass(
+    name="adversarial",
+    instructions=AdversarialPass.INSTRUCTIONS,
+    metadata={"adversarial": True},
+)
