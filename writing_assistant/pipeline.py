@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import difflib
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
-from writing_assistant.models import StyleProfile as _LegacyStyleProfile
 from writing_assistant.style import StyleProfile
 from writing_assistant.passes import (
     AdversarialPass,
@@ -28,7 +27,7 @@ _PASS_REGISTRY: dict[str, Any] = {
 @dataclass
 class PipelineConfig:
     passes: list[str]
-    style_profile: _LegacyStyleProfile | None = None
+    style_profile: StyleProfile | None = None
 
 
 @dataclass

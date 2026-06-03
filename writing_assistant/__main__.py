@@ -95,9 +95,9 @@ def main() -> None:
 
         backend: object = MockLLM()
     else:
-        from writing_assistant.backends import ClaudeCLIBackend
+        from writing_assistant.llm.claude_cli import ClaudeCliLLM
 
-        backend = ClaudeCLIBackend()
+        backend = ClaudeCliLLM()
 
     # Run
     pipeline = Pipeline(passes=passes, backend=backend, style_profile=style_profile)

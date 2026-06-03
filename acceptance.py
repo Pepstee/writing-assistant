@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Acceptance demo: runs the full pipeline on a 150-word sample draft using MockLLM."""
 
+from writing_assistant.llm.mock import MockLLM
 from writing_assistant.passes import ADVERSARIAL, CLARITY, CONCISENESS, CONSISTENCY, TONE
 from writing_assistant.pipeline import Pipeline
 
@@ -55,17 +56,6 @@ MOCK_RESPONSES = [
 ]
 
 PASSES = [CLARITY, TONE, CONCISENESS, CONSISTENCY, ADVERSARIAL]
-
-
-class MockLLM:
-    def __init__(self, responses: list[str]) -> None:
-        self._responses = responses
-        self._i = 0
-
-    def generate(self, prompt: str) -> str:  # noqa: ARG002
-        r = self._responses[self._i % len(self._responses)]
-        self._i += 1
-        return r
 
 
 def main() -> None:
