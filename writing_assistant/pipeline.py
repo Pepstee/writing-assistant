@@ -4,7 +4,8 @@ import difflib
 from dataclasses import dataclass, field
 from typing import Any
 
-from writing_assistant.models import StyleProfile
+from writing_assistant.models import StyleProfile as _LegacyStyleProfile
+from writing_assistant.style import StyleProfile
 from writing_assistant.passes import (
     AdversarialPass,
     ClarityPass,
@@ -27,7 +28,7 @@ _PASS_REGISTRY: dict[str, Any] = {
 @dataclass
 class PipelineConfig:
     passes: list[str]
-    style_profile: StyleProfile | None = None
+    style_profile: _LegacyStyleProfile | None = None
 
 
 @dataclass
@@ -59,9 +60,15 @@ class LegacyPipeline:
 class Pipeline:
     """Multi-pass rewrite pipeline accepting Pass dataclass instances."""
 
-    def __init__(self, passes: list[Pass], backend: LLMBackend) -> None:
+    def __init__(
+        self,
+        passes: list[Pass],
+        backend: LLMBackend,
+        style_profile: StyleProfile | None = None,
+    ) -> None:
         self.passes = passes
         self.backend = backend
+        self.style_profile = style_profile
 
     def run(self, text: str) -> list[RewriteResult]:
         results: list[RewriteResult] = []
@@ -79,7 +86,12 @@ class Pipeline:
                     f"Current text:\n{current}"
                 )
             else:
-                prompt = f"{p.instructions}\n\nText:\n{current}"
+                instructions = p.instructions
+                if p.name == "consistency" and self.style_profile is not None:
+                    instructions = (
+                        f"Style profile:\n{self.style_profile.summary()}\n\n{instructions}"
+                    )
+                prompt = f"{instructions}\n\nText:\n{current}"
             revised = self.backend.generate(prompt)
             diff = "".join(difflib.unified_diff(
                 current.splitlines(keepends=True),
