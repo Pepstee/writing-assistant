@@ -1,92 +1,199 @@
 # Writing Assistant
 
-A lightweight, multi-pass text rewriting library with a pluggable backend and style analysis.
+A lightweight, multi-pass text rewriting tool with a pluggable LLM backend and statistical style analysis. Feed it a draft; it runs it through up to five sequential editing passes — clarity, tone, conciseness, consistency, and adversarial self-review — and shows a unified diff for each one.
 
-## Install
+## Installation
+
+Python 3.10+ required. No third-party dependencies.
 
 ```bash
 pip install -e .
 ```
 
-Python 3.10+ is required. No external dependencies beyond the standard library.
-
-## Quick start
-
-```python
-from writing_assistant.backends import MockBackend, ClaudeCLIBackend
-from writing_assistant.pipeline import Pipeline, PipelineConfig
-
-config = PipelineConfig(passes=["clarity", "conciseness", "adversarial"])
-backend = MockBackend(responses=["Clearer text.", "Concise text.", "Final text."])
-pipeline = Pipeline(config=config, backend=backend)
-
-result = pipeline.run("Your draft goes here.")
-print(result.final_text)
-```
-
 ## Acceptance demo
 
-Run the bundled demo to see per-pass diffs and the final rewrite on a sample draft:
+The bundled `acceptance.py` script runs all five passes on a 150-word verbose sample draft using a fully deterministic mock backend (no network, no API key needed):
 
 ```bash
 python acceptance.py
 ```
 
-The demo uses `MockBackend` with deterministic responses so it works offline without
-any API credentials.
+It prints the original draft, a unified diff for each pass, and the final rewrite.
 
-## Pipeline
+## CLI
 
-`Pipeline` chains one or more named passes over a piece of text. Each pass sends the
-current text to the configured backend and returns a `PassResult` containing the
-original text, the rewrite, and a unified diff.
+```bash
+# pipe text in (uses the Claude CLI backend)
+echo "Your draft here." | python -m writing_assistant
 
-Available passes: `clarity`, `conciseness`, `tone`, `consistency`, `adversarial`.
+# read from a file
+python -m writing_assistant my_draft.txt
 
-```python
-config = PipelineConfig(passes=["clarity", "tone"])
+# use the mock backend (offline, no credentials)
+python -m writing_assistant --mock my_draft.txt
+
+# choose specific passes
+python -m writing_assistant --mock --passes clarity,conciseness my_draft.txt
+
+# also learn a style profile from a sample file
+python -m writing_assistant --mock --sample reference.txt my_draft.txt
 ```
 
-`PipelineResult.pass_results` holds one `PassResult` per pass;
-`PipelineResult.final_text` is the output of the last pass.
+Output: a per-pass diff section followed by a `Final draft:` block.
 
-## Backend
+## Configuring passes
 
-Two backends are provided:
+Available passes: `clarity`, `tone`, `conciseness`, `consistency`, `adversarial`.
 
-| Backend | Description |
+### Python API
+
+```python
+from writing_assistant.passes import CLARITY, TONE, CONCISENESS, CONSISTENCY, ADVERSARIAL
+from writing_assistant.pipeline import Pipeline
+from writing_assistant.llm.mock import MockLLM
+
+passes = [CLARITY, TONE, CONCISENESS, CONSISTENCY]
+backend = MockLLM(responses=["clearer", "better tone", "shorter", "consistent"])
+pipeline = Pipeline(passes=passes, backend=backend)
+
+results = pipeline.run("Your draft goes here.")
+for pass_obj, result in zip(passes, results):
+    print(f"=== {pass_obj.name} ===")
+    print(result.diff or "(no changes)")
+
+print("Final:", results[-1].revised)
+```
+
+Each `Pass` is a plain dataclass with `name` and `instructions` fields. You can define your own:
+
+```python
+from writing_assistant.types import Pass
+
+my_pass = Pass(
+    name="formal",
+    instructions="Rewrite the text in formal academic prose.",
+)
+pipeline = Pipeline(passes=[my_pass], backend=backend)
+```
+
+### What each built-in pass does
+
+| Pass | What it does |
 |---|---|
-| `MockBackend` | Cycles through a fixed list of strings; fully deterministic, no network. |
-| `ClaudeCLIBackend` | Calls the `claude` CLI via subprocess; requires the CLI to be installed. |
+| `clarity` | Plain language; removes jargon; every sentence easy to understand |
+| `tone` | Professional, respectful tone for a general audience |
+| `conciseness` | Removes filler, redundancy, and unnecessary detail |
+| `consistency` | Aligns terminology, voice, and style throughout |
+| `adversarial` | Surfaces weaknesses in all prior passes and rewrites to fix them |
 
-Implement the `complete(prompt: str) -> str` interface to add your own backend.
+The `adversarial` pass is special: its prompt includes the original text, all accumulated rewrites, and the current text, giving it full history to critique.
 
-```python
-from writing_assistant.backends import ClaudeCLIBackend
+## Plugging in a custom LLM backend
 
-backend = ClaudeCLIBackend(model="claude-sonnet-4-6")
-```
-
-## Style profile
-
-`StyleProfile` (in `writing_assistant/style_profile.py`) learns statistical style
-features from a set of sample texts and scores how closely a new text matches them.
+Any object with a `generate(prompt: str) -> str` method works as a backend. The `LLMBackend` Protocol in `writing_assistant/types.py` documents the contract:
 
 ```python
-from writing_assistant.style_profile import StyleProfile
-
-profile = StyleProfile()
-profile.fit(["Sample text one.", "Sample text two."])
-score = profile.similarity_score("New text to score.")
-print(score)  # 0.0–1.0
+class LLMBackend(Protocol):
+    def generate(self, prompt: str) -> str: ...
 ```
 
-Features captured: average sentence length, bigram/trigram frequencies, connector
-word usage, and a tone fingerprint (positivity, negativity, question density,
-exclamation density, average word length).
+### Built-in backends
 
-## Running tests
+**`ClaudeCliLLM`** (in `writing_assistant/llm/claude_cli.py`) — shells out to the authenticated `claude` CLI:
+
+```python
+from writing_assistant.llm.claude_cli import ClaudeCliLLM
+
+backend = ClaudeCliLLM(model="claude-sonnet-4-6")
+pipeline = Pipeline(passes=[CLARITY, CONCISENESS], backend=backend)
+```
+
+Requires the [Claude Code CLI](https://claude.ai/code) to be installed and authenticated.
+
+**`MockLLM`** (in `writing_assistant/llm/mock.py`) — cycles through a fixed list of strings; fully deterministic:
+
+```python
+from writing_assistant.llm.mock import MockLLM
+
+backend = MockLLM(responses=["Cleaner.", "Shorter.", "Done."])
+```
+
+### Custom backend example
+
+```python
+import anthropic
+from writing_assistant.pipeline import Pipeline
+from writing_assistant.passes import CLARITY, TONE
+
+class AnthropicSDKBackend:
+    def __init__(self) -> None:
+        self._client = anthropic.Anthropic()
+
+    def generate(self, prompt: str) -> str:
+        message = self._client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=1024,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return message.content[0].text
+
+pipeline = Pipeline(passes=[CLARITY, TONE], backend=AnthropicSDKBackend())
+results = pipeline.run("Your draft.")
+print(results[-1].revised)
+```
+
+Any provider works — OpenAI, local Ollama, a REST API — as long as the object exposes `generate`.
+
+## Building a style profile from sample text
+
+`StyleProfile` (in `writing_assistant/style.py`) analyses sample texts and extracts statistical style features. When passed to the `Pipeline`, the **consistency pass** receives the profile summary in its prompt so the LLM can match the target style.
+
+```python
+from writing_assistant.style import StyleProfile
+from writing_assistant.pipeline import Pipeline
+from writing_assistant.passes import CONSISTENCY
+from writing_assistant.llm.mock import MockLLM
+
+# Learn from one or more reference texts
+with open("reference.txt") as f:
+    sample = f.read()
+
+profile = StyleProfile.learn([sample])
+print(profile.summary())
+# Average sentence length: 12.4 words
+# Passive voice ratio: 18.2%
+# Vocabulary richness (type-token ratio): 0.61
+# Preferred transition words: also, furthermore, however, therefore
+
+# Use the profile in a pipeline
+backend = MockLLM(responses=["Consistent output."])
+pipeline = Pipeline(passes=[CONSISTENCY], backend=backend, style_profile=profile)
+results = pipeline.run("Your draft.")
+```
+
+Pass multiple samples to `learn()` for a richer profile:
+
+```python
+profile = StyleProfile.learn([text1, text2, text3])
+```
+
+The profile captures:
+- Average sentence length (words per sentence)
+- Passive voice ratio
+- Vocabulary richness (type-token ratio)
+- Preferred transition words (`however`, `therefore`, `moreover`, …)
+
+Save and reload a profile as JSON:
+
+```python
+json_str = profile.to_json()
+restored = StyleProfile.from_json(json_str)
+```
+
+## Running the test suite
 
 ```bash
 pytest tests/
 ```
+
+The suite covers the pipeline, all five passes, both backends, style profile logic, CLI exit codes, and the acceptance script. No network calls are made; all LLM calls use `MockLLM`.
