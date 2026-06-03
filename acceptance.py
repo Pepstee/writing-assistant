@@ -1,65 +1,96 @@
 #!/usr/bin/env python3
-"""Acceptance demo: runs the full pipeline on a bundled sample draft using MockBackend."""
+"""Acceptance demo: runs the full pipeline on a 150-word sample draft using MockLLM."""
 
-from writing_assistant.backends import MockBackend
-from writing_assistant.pipeline import Pipeline, PipelineConfig
+from writing_assistant.passes import ADVERSARIAL, CLARITY, CONCISENESS, CONSISTENCY, TONE
+from writing_assistant.pipeline import Pipeline
 
 SAMPLE_DRAFT = (
     "In the event that you are considering making utilization of our software product, "
-    "it is important to take into consideration the fact that there are numerous "
-    "features which have been implemented in order to facilitate the process of "
-    "improving your written content. The aforementioned features include, but are "
-    "not limited to, clarity enhancement, conciseness improvements, and adversarial "
-    "self-review capabilities which are available for your use at any point in time."
+    "it is of the utmost importance to take into consideration the fact that there are "
+    "numerous features which have been implemented in order to facilitate the process of "
+    "improving your written content in a meaningful way. The aforementioned features include, "
+    "but are not limited to, clarity enhancement capabilities, conciseness improvements that "
+    "reduce verbosity, tone adjustments for professional audiences, consistency enforcement "
+    "across the entirety of your document, and adversarial self-review capabilities which "
+    "are available for your use at any point in time. It should furthermore be noted that "
+    "the system has been designed with the explicit purpose of ensuring that all users, "
+    "regardless of their level of expertise or experience, are able to derive maximum benefit "
+    "from the comprehensive suite of writing tools that has been made available to them."
 )
 
-# One deterministic response per pass; MockBackend cycles through these.
 MOCK_RESPONSES = [
-    # clarity pass
+    # clarity
     (
-        "If you are considering using our software, note that it offers many features "
-        "to help improve your written content. These include clarity enhancement, "
-        "conciseness improvements, and adversarial self-review, all available at any time."
+        "If you are considering using our software, know that it offers many features "
+        "to improve your writing. These include clarity enhancement, conciseness improvements, "
+        "tone adjustment, consistency enforcement, and adversarial self-review, all available "
+        "at any time. The system is designed so that users of all skill levels can benefit "
+        "from its comprehensive writing tools."
     ),
-    # conciseness pass
+    # tone
     (
-        "Our software offers features to improve your writing: "
-        "clarity enhancement, conciseness improvements, and adversarial self-review."
+        "If you are considering our software, it provides several features to improve your "
+        "writing: clarity enhancement, conciseness improvements, tone adjustment, consistency "
+        "enforcement, and adversarial self-review. These tools are accessible to users at all "
+        "experience levels."
     ),
-    # adversarial pass
+    # conciseness
     (
-        "Our software improves your writing through three focused features: "
-        "clarity enhancement, conciseness, and adversarial self-review."
+        "Our software improves your writing through five focused features: clarity enhancement, "
+        "conciseness, tone adjustment, consistency enforcement, and adversarial self-review — "
+        "all available to users at every skill level."
+    ),
+    # consistency
+    (
+        "Our software improves writing through five features: clarity enhancement, conciseness "
+        "improvement, tone adjustment, consistency enforcement, and adversarial self-review — "
+        "available to writers at every skill level."
+    ),
+    # adversarial — no regression found; returns the same text
+    (
+        "Our software improves writing through five features: clarity enhancement, conciseness "
+        "improvement, tone adjustment, consistency enforcement, and adversarial self-review — "
+        "available to writers at every skill level."
     ),
 ]
 
-PASSES = ["clarity", "conciseness", "adversarial"]
+PASSES = [CLARITY, TONE, CONCISENESS, CONSISTENCY, ADVERSARIAL]
+
+
+class MockLLM:
+    def __init__(self, responses: list[str]) -> None:
+        self._responses = responses
+        self._i = 0
+
+    def generate(self, prompt: str) -> str:  # noqa: ARG002
+        r = self._responses[self._i % len(self._responses)]
+        self._i += 1
+        return r
 
 
 def main() -> None:
-    backend = MockBackend(responses=MOCK_RESPONSES)
-    config = PipelineConfig(passes=PASSES)
-    pipeline = Pipeline(config=config, backend=backend)
+    backend = MockLLM(responses=MOCK_RESPONSES)
+    pipeline = Pipeline(passes=PASSES, backend=backend)
 
     print("=" * 60)
     print("Writing Assistant — Acceptance Demo")
     print("=" * 60)
-    print(f"\nOriginal draft ({len(SAMPLE_DRAFT)} chars):")
+    print(f"\nOriginal draft ({len(SAMPLE_DRAFT.split())} words):")
     print(SAMPLE_DRAFT)
 
-    result = pipeline.run(SAMPLE_DRAFT)
+    results = pipeline.run(SAMPLE_DRAFT)
 
-    for i, (pass_name, pass_result) in enumerate(zip(PASSES, result.pass_results), 1):
-        print(f"\n--- Pass {i}: {pass_name} ---")
-        if pass_result.diff:
+    for p, result in zip(PASSES, results):
+        print(f"\n--- Pass: {p.name} ---")
+        if result.diff:
             print("Diff:")
-            print(pass_result.diff)
+            print(result.diff)
         else:
-            print("Diff: (no changes)")
+            print("Diff: (no changes — adversarial pass found no regression)")
 
     print("\n" + "=" * 60)
     print("Final rewrite:")
-    print(result.final_text)
+    print(results[-1].revised)
     print("=" * 60)
 
 
