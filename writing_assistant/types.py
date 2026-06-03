@@ -20,12 +20,3 @@ class RewriteResult:
     original: str
     revised: str
     diff: str
-
-
-@dataclass
-class StyleProfile:
-    tone: str = "neutral"
-    formality: str = "formal"
-    max_sentence_length: int = 30
-    preferred_voice: str = "active"
-    custom_rules: list[str] = field(default_factory=list)

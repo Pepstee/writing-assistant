@@ -73,7 +73,6 @@ class StyleProfile:
         self.bigram_freq = Counter(_ngrams(all_words, 2))
         self.trigram_freq = Counter(_ngrams(all_words, 3))
 
-        word_set = set(all_words)
         self.connector_freq = Counter(w for w in all_words if w in _CONNECTORS)
 
         total = len(all_words) or 1
