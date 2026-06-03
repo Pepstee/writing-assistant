@@ -11,3 +11,5 @@ dependencies = []
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["writing_assistant*"]
+
+[tool.pytest.ini_options]
