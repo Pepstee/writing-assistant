@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from writing_assistant.llm.claude_cli import ClaudeCliLLM
-from writing_assistant.llm.mock import MockLLM
+from mock_llm import MockLLM
 from writing_assistant.types import LLMBackend
 
 

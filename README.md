@@ -12,13 +12,13 @@ pip install -e .
 
 ## Acceptance demo
 
-The bundled `acceptance.py` script runs all five passes on a 150-word verbose sample draft using a fully deterministic mock backend (no network, no API key needed):
+The bundled `acceptance.py` script runs all five passes on a 142-word verbose sample draft using the deterministic rule-based backend (no network, no API key needed). Every edit it shows is a real transformation made by shipped code:
 
 ```bash
 python acceptance.py
 ```
 
-It prints the original draft, a unified diff for each pass, and the final rewrite.
+It prints the learned style profile, the original draft, a unified diff for each pass, and the final rewrite (which it asserts is genuinely shorter and free of the wordy phrasing). The `acceptance` file in the project root declares the executable acceptance criteria, one command per line.
 
 ## CLI
 
@@ -29,14 +29,14 @@ echo "Your draft here." | python -m writing_assistant
 # read from a file
 python -m writing_assistant my_draft.txt
 
-# use the mock backend (offline, no credentials)
-python -m writing_assistant --mock my_draft.txt
+# use the offline rule-based backend (no credentials, deterministic)
+python -m writing_assistant --backend rules my_draft.txt
 
 # choose specific passes
-python -m writing_assistant --mock --passes clarity,conciseness my_draft.txt
+python -m writing_assistant --backend rules --passes clarity,conciseness my_draft.txt
 
 # also learn a style profile from a sample file
-python -m writing_assistant --mock --sample reference.txt my_draft.txt
+python -m writing_assistant --backend rules --sample reference.txt my_draft.txt
 ```
 
 Output: a per-pass diff section followed by a `Final draft:` block.
@@ -50,10 +50,10 @@ Available passes: `clarity`, `tone`, `conciseness`, `consistency`, `adversarial`
 ```python
 from writing_assistant.passes import CLARITY, TONE, CONCISENESS, CONSISTENCY, ADVERSARIAL
 from writing_assistant.pipeline import Pipeline
-from writing_assistant.llm.mock import MockLLM
+from writing_assistant.llm.rule_based import RuleBasedRewriter
 
 passes = [CLARITY, TONE, CONCISENESS, CONSISTENCY]
-backend = MockLLM(responses=["clearer", "better tone", "shorter", "consistent"])
+backend = RuleBasedRewriter()  # offline; swap in ClaudeCliLLM for model-quality rewrites
 pipeline = Pipeline(passes=passes, backend=backend)
 
 results = pipeline.run("Your draft goes here.")
@@ -110,12 +110,12 @@ pipeline = Pipeline(passes=[CLARITY, CONCISENESS], backend=backend)
 
 Requires the [Claude Code CLI](https://claude.ai/code) to be installed and authenticated.
 
-**`MockLLM`** (in `writing_assistant/llm/mock.py`) — cycles through a fixed list of strings; fully deterministic:
+**`RuleBasedRewriter`** (in `writing_assistant/llm/rule_based.py`) — a deterministic, fully offline rule engine. It is not a language model: it detects which pass is asking from the prompt and applies that pass's editing rules (plain-language substitutions, filler removal, contraction expansion, typographic normalisation). Useful when you have no network, no credentials, or need byte-for-byte reproducible output:
 
 ```python
-from writing_assistant.llm.mock import MockLLM
+from writing_assistant.llm.rule_based import RuleBasedRewriter
 
-backend = MockLLM(responses=["Cleaner.", "Shorter.", "Done."])
+backend = RuleBasedRewriter()
 ```
 
 ### Custom backend example
@@ -152,7 +152,7 @@ Any provider works — OpenAI, local Ollama, a REST API — as long as the objec
 from writing_assistant.style import StyleProfile
 from writing_assistant.pipeline import Pipeline
 from writing_assistant.passes import CONSISTENCY
-from writing_assistant.llm.mock import MockLLM
+from writing_assistant.llm.rule_based import RuleBasedRewriter
 
 # Learn from one or more reference texts
 with open("reference.txt") as f:
@@ -166,7 +166,7 @@ print(profile.summary())
 # Preferred transition words: also, furthermore, however, therefore
 
 # Use the profile in a pipeline
-backend = MockLLM(responses=["Consistent output."])
+backend = RuleBasedRewriter()
 pipeline = Pipeline(passes=[CONSISTENCY], backend=backend, style_profile=profile)
 results = pipeline.run("Your draft.")
 ```
@@ -209,4 +209,4 @@ Use it to measure whether a pipeline rewrite drifted away from the reference sty
 pytest tests/
 ```
 
-The suite covers the pipeline, all five passes, both backends, style profile logic, CLI exit codes, and the acceptance script. No network calls are made; all LLM calls use `MockLLM`.
+The suite covers the pipeline, all five passes, both shipped backends (the rule engine directly; the Claude CLI backend with its subprocess boundary patched), style profile logic, CLI exit codes, and the acceptance script. No network calls are made: pipeline-level tests inject a scripted test double that lives in `tests/mock_llm.py` and is never shipped.

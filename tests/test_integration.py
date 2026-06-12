@@ -13,7 +13,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from writing_assistant.llm.mock import MockLLM
+from mock_llm import MockLLM
 from writing_assistant.passes import ADVERSARIAL, CLARITY, CONCISENESS, CONSISTENCY, TONE
 from writing_assistant.pipeline import Pipeline
 from writing_assistant.style import StyleProfile
@@ -338,23 +338,23 @@ def _run_cli(*args: str, stdin: str = INPUT_DRAFT) -> subprocess.CompletedProces
 
 
 class TestCLIExitCode:
-    """CLI (python -m writing_assistant) must exit 0 on valid input with --mock."""
+    """CLI (python -m writing_assistant) must exit 0 on valid input with --backend rules."""
 
-    def test_cli_exits_zero_with_mock_default_passes(self) -> None:
-        result = _run_cli("--mock")
+    def test_cli_exits_zero_with_rules_backend_default_passes(self) -> None:
+        result = _run_cli("--backend", "rules")
         assert result.returncode == 0, (
             f"CLI exited {result.returncode}.\nstderr: {result.stderr}"
         )
 
     def test_cli_exits_zero_with_single_explicit_pass(self) -> None:
-        result = _run_cli("--mock", "--passes", "clarity")
+        result = _run_cli("--backend", "rules", "--passes", "clarity")
         assert result.returncode == 0, (
             f"CLI exited {result.returncode}.\nstderr: {result.stderr}"
         )
 
     def test_cli_exits_zero_with_all_five_passes_explicit(self) -> None:
         result = _run_cli(
-            "--mock",
+            "--backend", "rules",
             "--passes",
             "clarity,tone,conciseness,consistency,adversarial",
         )
@@ -363,42 +363,42 @@ class TestCLIExitCode:
         )
 
     def test_cli_exits_zero_with_adversarial_only(self) -> None:
-        result = _run_cli("--mock", "--passes", "adversarial")
+        result = _run_cli("--backend", "rules", "--passes", "adversarial")
         assert result.returncode == 0, (
             f"CLI exited {result.returncode}.\nstderr: {result.stderr}"
         )
 
     def test_cli_exits_nonzero_on_empty_stdin(self) -> None:
-        result = _run_cli("--mock", stdin="")
+        result = _run_cli("--backend", "rules", stdin="")
         assert result.returncode != 0, (
             "CLI should exit non-zero when input text is empty"
         )
 
     def test_cli_exits_nonzero_on_whitespace_only_stdin(self) -> None:
-        result = _run_cli("--mock", stdin="   \n\t  ")
+        result = _run_cli("--backend", "rules", stdin="   \n\t  ")
         assert result.returncode != 0, (
             "CLI should exit non-zero when input text is whitespace-only"
         )
 
     def test_cli_exits_nonzero_on_unknown_pass_name(self) -> None:
-        result = _run_cli("--mock", "--passes", "nosuchpass")
+        result = _run_cli("--backend", "rules", "--passes", "nosuchpass")
         assert result.returncode != 0, (
             "CLI should exit non-zero when an unknown pass name is given"
         )
 
     def test_cli_exits_nonzero_on_mixed_valid_and_unknown_passes(self) -> None:
-        result = _run_cli("--mock", "--passes", "clarity,nosuchpass")
+        result = _run_cli("--backend", "rules", "--passes", "clarity,nosuchpass")
         assert result.returncode != 0
 
     def test_cli_stdout_contains_final_draft_header(self) -> None:
-        result = _run_cli("--mock")
+        result = _run_cli("--backend", "rules")
         assert result.returncode == 0
         assert "Final draft:" in result.stdout, (
             "CLI output should contain 'Final draft:' section"
         )
 
     def test_cli_stdout_contains_pass_section_for_each_default_pass(self) -> None:
-        result = _run_cli("--mock")
+        result = _run_cli("--backend", "rules")
         assert result.returncode == 0
         for pass_name in ("CLARITY", "TONE", "CONCISENESS", "CONSISTENCY", "ADVERSARIAL"):
             assert f"Pass: {pass_name}" in result.stdout, (
@@ -406,12 +406,12 @@ class TestCLIExitCode:
             )
 
     def test_cli_stdout_is_nonempty_on_success(self) -> None:
-        result = _run_cli("--mock")
+        result = _run_cli("--backend", "rules")
         assert result.returncode == 0
         assert result.stdout.strip() != "", "CLI produced no output on success"
 
     def test_cli_stdin_with_leading_whitespace_and_content_exits_zero(self) -> None:
-        result = _run_cli("--mock", stdin="\n\n   Some actual content here.\n\n")
+        result = _run_cli("--backend", "rules", stdin="\n\n   Some actual content here.\n\n")
         assert result.returncode == 0, (
             f"CLI should succeed when stdin has actual content after stripping.\n"
             f"stderr: {result.stderr}"
