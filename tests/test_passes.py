@@ -6,11 +6,19 @@ passes collapse into sharing the same instructions.
 """
 from __future__ import annotations
 
+import subprocess
+import sys
+from pathlib import Path
+
 import pytest
 
+from mock_llm import MockLLM
 from writing_assistant import passes as passes_module
 from writing_assistant.passes import ADVERSARIAL, CLARITY, CONCISENESS, CONSISTENCY, TONE
+from writing_assistant.pipeline import Pipeline
 from writing_assistant.types import Pass
+
+_REPO_ROOT = Path(__file__).parent.parent
 
 ALL_PASSES = [CLARITY, TONE, CONCISENESS, CONSISTENCY, ADVERSARIAL]
 
@@ -134,4 +142,174 @@ class TestLegacyApiIsGone:
     def test_legacy_symbol_absent(self, legacy_name):
         assert not hasattr(passes_module, legacy_name), (
             f"Legacy symbol passes.{legacy_name} has been resurrected"
+        )
+
+
+class TestPassInstructionsMutationBlocksPipeline:
+    """Adversarial: zeroing a pass's instructions must cause the pipeline to
+    raise (ValueError) rather than silently generating prompt-free output.
+
+    Each test restores the original instructions in a finally block so that
+    module-level constants are not permanently corrupted across the suite.
+    """
+
+    @pytest.mark.parametrize("attr", sorted(EXPECTED_NAMES))
+    def test_empty_instructions_raises_in_pipeline(self, attr):
+        p = getattr(passes_module, attr)
+        original = p.instructions
+        try:
+            p.instructions = ""
+            with pytest.raises(ValueError):
+                Pipeline(passes=[p], backend=MockLLM(["output"])).run("Some input text.")
+        finally:
+            p.instructions = original
+
+    @pytest.mark.parametrize("attr", sorted(EXPECTED_NAMES))
+    def test_whitespace_only_instructions_raises_in_pipeline(self, attr):
+        p = getattr(passes_module, attr)
+        original = p.instructions
+        try:
+            p.instructions = "   \t\n"
+            with pytest.raises(ValueError):
+                Pipeline(passes=[p], backend=MockLLM(["output"])).run("Some input text.")
+        finally:
+            p.instructions = original
+
+    @pytest.mark.parametrize("attr", sorted(EXPECTED_NAMES))
+    def test_instructions_restored_after_mutation(self, attr):
+        """Finaliser must restore the constant even when the pipeline does not raise."""
+        p = getattr(passes_module, attr)
+        original = p.instructions
+        try:
+            p.instructions = ""
+            try:
+                Pipeline(passes=[p], backend=MockLLM(["output"])).run("Text.")
+            except Exception:
+                pass
+        finally:
+            p.instructions = original
+        assert p.instructions == original, (
+            f"passes.{attr}.instructions was not restored after mutation; "
+            "module-level constant is corrupted"
+        )
+
+    def test_new_pass_with_empty_instructions_raises_in_pipeline(self):
+        """A freshly constructed Pass with empty instructions must also raise."""
+        p = Pass(name="empty_test", instructions="", metadata={})
+        with pytest.raises(ValueError):
+            Pipeline(passes=[p], backend=MockLLM(["output"])).run("Text.")
+
+    def test_new_pass_with_whitespace_instructions_raises_in_pipeline(self):
+        """A freshly constructed Pass with whitespace-only instructions must also raise."""
+        p = Pass(name="ws_test", instructions="\n  \t  \n", metadata={})
+        with pytest.raises(ValueError):
+            Pipeline(passes=[p], backend=MockLLM(["output"])).run("Text.")
+
+    @pytest.mark.parametrize("attr", sorted(EXPECTED_NAMES))
+    def test_valid_instructions_still_work_after_mutation_cycle(self, attr):
+        """Restoring original instructions must leave the pass fully functional."""
+        p = getattr(passes_module, attr)
+        original = p.instructions
+        try:
+            p.instructions = ""
+        finally:
+            p.instructions = original
+        # Pass must now work without raising
+        results = Pipeline(passes=[p], backend=MockLLM(["clean output."])).run("Text.")
+        assert len(results) == 1
+
+
+class TestAcceptanceDemoReliability:
+    """acceptance.py must run to completion and exit 0 using the deterministic
+    offline backend (no network calls, no API keys) and must satisfy its own
+    built-in assertions: the pipeline shortens the draft and removes the
+    canonical wordy phrase 'in the event that'."""
+
+    _SCRIPT = _REPO_ROOT / "acceptance.py"
+
+    def test_acceptance_demo_subprocess_exits_zero(self):
+        result = subprocess.run(
+            [sys.executable, str(self._SCRIPT)],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, (
+            f"acceptance.py exited {result.returncode}.\nstderr: {result.stderr}"
+        )
+
+    def test_acceptance_demo_subprocess_is_idempotent(self):
+        """Running acceptance.py twice must produce exit 0 both times."""
+        for run in range(2):
+            result = subprocess.run(
+                [sys.executable, str(self._SCRIPT)],
+                capture_output=True,
+                text=True,
+            )
+            assert result.returncode == 0, (
+                f"acceptance.py exited {result.returncode} on run {run + 1}.\n"
+                f"stderr: {result.stderr}"
+            )
+
+    def test_acceptance_demo_with_mock_llm_five_passes_complete(self):
+        """Replicate acceptance.py logic using MockLLM; pipeline must return 5 results."""
+        from writing_assistant.style import StyleProfile
+
+        STYLE_SAMPLE = (
+            "We build tools that respect the reader. Every sentence earns its place. "
+            "However, brevity never excuses vagueness; therefore, each claim is concrete. "
+            "Furthermore, we prefer the active voice and plain words."
+        )
+        # Deliberately wordy draft matching acceptance.py's SAMPLE_DRAFT opening
+        SAMPLE_DRAFT = (
+            "In the event that you are considering making utilization of our software product, "
+            "it is of the utmost importance to take into consideration the fact that there are "
+            "numerous features implemented in order to facilitate improvement of written content."
+        )
+        PASSES = [CLARITY, TONE, CONCISENESS, CONSISTENCY, ADVERSARIAL]
+
+        profile = StyleProfile.learn([STYLE_SAMPLE])
+        # MockLLM returns a short, clean response for every pass:
+        # - shorter than SAMPLE_DRAFT (word count check passes)
+        # - contains no "in the event that" (clarity assertion passes)
+        backend = MockLLM(["Short clean rewrite."] * len(PASSES))
+        pipeline = Pipeline(passes=PASSES, backend=backend, style_profile=profile)
+
+        results = pipeline.run(SAMPLE_DRAFT)
+
+        assert len(results) == len(PASSES), (
+            f"Expected {len(PASSES)} results, got {len(results)}"
+        )
+
+    def test_acceptance_demo_mock_llm_final_output_satisfies_acceptance_assertions(self):
+        """The MockLLM-backed pipeline must satisfy acceptance.py's own two assertions."""
+        from writing_assistant.style import StyleProfile
+
+        SAMPLE_DRAFT = (
+            "In the event that you are considering making utilization of our software product, "
+            "it is of the utmost importance to take into consideration the fact that there are "
+            "numerous features implemented in order to facilitate improvement of written content."
+        )
+        PASSES = [CLARITY, TONE, CONCISENESS, CONSISTENCY, ADVERSARIAL]
+
+        backend = MockLLM(["Short output."] * len(PASSES))
+        results = Pipeline(passes=PASSES, backend=backend).run(SAMPLE_DRAFT)
+        final = results[-1].revised
+
+        assert len(final.split()) < len(SAMPLE_DRAFT.split()), (
+            "acceptance assertion 1: pipeline must shorten the wordy draft"
+        )
+        assert "in the event that" not in final.lower(), (
+            "acceptance assertion 2: 'in the event that' must not survive to the final output"
+        )
+
+    def test_acceptance_demo_subprocess_stderr_is_empty_on_success(self):
+        """A clean run must produce no stderr output."""
+        result = subprocess.run(
+            [sys.executable, str(self._SCRIPT)],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+        assert result.stderr.strip() == "", (
+            f"acceptance.py wrote to stderr: {result.stderr!r}"
         )
