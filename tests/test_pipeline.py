@@ -156,7 +156,8 @@ class TestAdversarialPassIsLast:
         sentinel = PASS_SENTINELS["adversarial"]
         matches = [i for i, r in enumerate(results) if r.revised == sentinel]
         assert matches == [len(DEFAULT_PASSES) - 1], (
-            f"Adversarial sentinel appeared at positions {matches}, expected only [{len(DEFAULT_PASSES) - 1}]"
+            f"Adversarial sentinel appeared at positions {matches}, "
+            f"expected only [{len(DEFAULT_PASSES) - 1}]"
         )
 
     def test_non_adversarial_passes_precede_adversarial(self):

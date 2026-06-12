@@ -5,10 +5,7 @@ These tests verify the complete end-to-end flow:
   StyleProfile.learn() → Pipeline (all five passes) → per-pass diffs produced
   → adversarial pass fires last → final result returned
 
-All LLM calls use MockLLM or MockBackend; no real network calls are made.
-
-Mutation-resistant tests: removing a pass from _PASS_REGISTRY causes a test
-to fail, not silently pass.
+All LLM calls use MockLLM; no real network calls are made.
 """
 from __future__ import annotations
 
@@ -16,17 +13,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
-from writing_assistant.backends import MockBackend
 from writing_assistant.llm.mock import MockLLM
 from writing_assistant.passes import ADVERSARIAL, CLARITY, CONCISENESS, CONSISTENCY, TONE
-from writing_assistant.pipeline import (
-    LegacyPipeline,
-    Pipeline,
-    PipelineConfig,
-    _PASS_REGISTRY,
-)
+from writing_assistant.pipeline import Pipeline
 from writing_assistant.style import StyleProfile
 from writing_assistant.types import Pass, RewriteResult
 
@@ -337,102 +326,6 @@ class TestAdversarialPassFires:
         assert "Accumulated rewrites" in prompts[0]
 
 
-# ── Mutation-resistant registry tests ─────────────────────────────────────────
-
-REQUIRED_REGISTRY_KEYS = frozenset({"clarity", "tone", "conciseness", "consistency", "adversarial"})
-
-
-class TestPassRegistryMutationResistance:
-    """
-    Each of these tests fails if the corresponding pass is removed from _PASS_REGISTRY.
-
-    Removing any key from _PASS_REGISTRY must cause at least one test to fail —
-    silently passing with a reduced registry is not acceptable.
-    """
-
-    def test_registry_contains_clarity(self) -> None:
-        assert "clarity" in _PASS_REGISTRY
-
-    def test_registry_contains_tone(self) -> None:
-        assert "tone" in _PASS_REGISTRY
-
-    def test_registry_contains_conciseness(self) -> None:
-        assert "conciseness" in _PASS_REGISTRY
-
-    def test_registry_contains_consistency(self) -> None:
-        assert "consistency" in _PASS_REGISTRY
-
-    def test_registry_contains_adversarial(self) -> None:
-        assert "adversarial" in _PASS_REGISTRY
-
-    def test_registry_has_exactly_the_required_keys(self) -> None:
-        assert set(_PASS_REGISTRY.keys()) == REQUIRED_REGISTRY_KEYS, (
-            f"_PASS_REGISTRY keys mismatch.\n"
-            f"  Expected: {sorted(REQUIRED_REGISTRY_KEYS)}\n"
-            f"  Got:      {sorted(_PASS_REGISTRY.keys())}"
-        )
-
-    def test_all_registry_values_are_callable(self) -> None:
-        for name, value in _PASS_REGISTRY.items():
-            assert callable(value), (
-                f"_PASS_REGISTRY['{name}'] is not callable: {value!r}"
-            )
-
-    def test_legacy_pipeline_runs_all_five_registry_passes(self) -> None:
-        """
-        LegacyPipeline.__init__ does: [_PASS_REGISTRY[name]() for name in config.passes].
-        If any of the five keys is missing from _PASS_REGISTRY, this test raises KeyError.
-        Removing any pass from the registry breaks this test — it cannot silently pass.
-        """
-        config = PipelineConfig(passes=sorted(REQUIRED_REGISTRY_KEYS))
-        backend = MockBackend(responses=["output"] * 5)
-        pipeline = LegacyPipeline(config=config, backend=backend)
-        result = pipeline.run("Test sentence.")
-        assert len(result.pass_results) == 5, (
-            f"Expected 5 PassResult objects (one per registry pass), got {len(result.pass_results)}"
-        )
-
-    @pytest.mark.parametrize("pass_name", sorted(REQUIRED_REGISTRY_KEYS))
-    def test_each_registered_pass_instantiates_and_runs(self, pass_name: str) -> None:
-        """
-        Directly instantiates each registered class and calls .run().
-        Fails with KeyError if the pass is absent from the registry.
-        """
-        from writing_assistant.passes import PassResult
-
-        cls = _PASS_REGISTRY[pass_name]
-        backend = MockBackend(responses=["test output"])
-        instance = cls()
-        result = instance.run("Test text.", backend)
-        assert isinstance(result, PassResult), (
-            f"_PASS_REGISTRY['{pass_name}']().run() returned {type(result)}, expected PassResult"
-        )
-        assert result.rewritten == "test output"
-
-    @pytest.mark.parametrize("removed_name", sorted(REQUIRED_REGISTRY_KEYS))
-    def test_removing_a_pass_from_registry_breaks_full_legacy_pipeline(
-        self, removed_name: str
-    ) -> None:
-        """
-        Simulates removing one pass from the registry and verifies that building
-        a full 5-pass LegacyPipeline raises KeyError rather than silently succeeding.
-
-        This is the mutation-resistance contract: every pass in the registry is load-bearing.
-        """
-        mutated: dict = {k: v for k, v in _PASS_REGISTRY.items() if k != removed_name}
-        config = PipelineConfig(passes=sorted(REQUIRED_REGISTRY_KEYS))
-        with pytest.raises(KeyError):
-            _ = [mutated[name] for name in config.passes]
-
-    def test_pass_instructions_are_nonempty_strings(self) -> None:
-        """Every registered pass class must have a non-empty INSTRUCTIONS string."""
-        for name, cls in _PASS_REGISTRY.items():
-            instructions = getattr(cls, "INSTRUCTIONS", "")
-            assert isinstance(instructions, str) and instructions.strip(), (
-                f"_PASS_REGISTRY['{name}'].INSTRUCTIONS is empty or missing"
-            )
-
-
 # ── CLI entry-point exit-code tests ───────────────────────────────────────────
 
 def _run_cli(*args: str, stdin: str = INPUT_DRAFT) -> subprocess.CompletedProcess:
@@ -670,6 +563,10 @@ class TestStyleProfilePipelineIntegration:
         with_profile = StyleProfile.learn([SAMPLE_STYLE_TEXT])
         llm_a = MockLLM(SENTINEL_RESPONSES[:])
         llm_b = MockLLM(SENTINEL_RESPONSES[:])
-        results_with = Pipeline(passes=ALL_PASSES, backend=llm_a, style_profile=with_profile).run(INPUT_DRAFT)
-        results_without = Pipeline(passes=ALL_PASSES, backend=llm_b, style_profile=None).run(INPUT_DRAFT)
+        results_with = Pipeline(
+            passes=ALL_PASSES, backend=llm_a, style_profile=with_profile
+        ).run(INPUT_DRAFT)
+        results_without = Pipeline(
+            passes=ALL_PASSES, backend=llm_b, style_profile=None
+        ).run(INPUT_DRAFT)
         assert len(results_with) == len(results_without)

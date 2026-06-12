@@ -225,15 +225,18 @@ class TestJsonRoundTrip:
 
     def test_roundtrip_preserves_avg_sentence_length(self) -> None:
         profile = StyleProfile.learn(ACTIVE_SAMPLE)
-        assert StyleProfile.from_json(profile.to_json()).avg_sentence_length == profile.avg_sentence_length
+        restored = StyleProfile.from_json(profile.to_json())
+        assert restored.avg_sentence_length == profile.avg_sentence_length
 
     def test_roundtrip_preserves_passive_voice_ratio(self) -> None:
         profile = StyleProfile.learn(PASSIVE_SAMPLE)
-        assert StyleProfile.from_json(profile.to_json()).passive_voice_ratio == profile.passive_voice_ratio
+        restored = StyleProfile.from_json(profile.to_json())
+        assert restored.passive_voice_ratio == profile.passive_voice_ratio
 
     def test_roundtrip_preserves_vocabulary_richness(self) -> None:
         profile = StyleProfile.learn(ACTIVE_SAMPLE)
-        assert StyleProfile.from_json(profile.to_json()).vocabulary_richness == profile.vocabulary_richness
+        restored = StyleProfile.from_json(profile.to_json())
+        assert restored.vocabulary_richness == profile.vocabulary_richness
 
     def test_roundtrip_preserves_transition_words_list(self) -> None:
         profile = StyleProfile.learn(ACTIVE_SAMPLE)
