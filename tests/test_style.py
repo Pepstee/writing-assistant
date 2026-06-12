@@ -16,7 +16,7 @@ from dataclasses import replace
 import pytest
 
 from writing_assistant.style import StyleProfile
-from writing_assistant.llm.mock import MockLLM
+from mock_llm import MockLLM
 from writing_assistant.passes import CLARITY, CONSISTENCY
 from writing_assistant.pipeline import Pipeline
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from writing_assistant.llm.mock import MockLLM
+from mock_llm import MockLLM
 from writing_assistant.passes import (
     ADVERSARIAL,
     CLARITY,

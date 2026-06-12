@@ -46,9 +46,13 @@ def main() -> None:
         ),
     )
     parser.add_argument(
-        "--mock",
-        action="store_true",
-        help="use the mock LLM backend instead of the Claude CLI",
+        "--backend",
+        choices=("claude", "rules"),
+        default="claude",
+        help=(
+            "rewrite backend: 'claude' shells out to the authenticated Claude CLI; "
+            "'rules' is the deterministic offline rule-based editor (no network)"
+        ),
     )
     args = parser.parse_args()
 
@@ -90,10 +94,10 @@ def main() -> None:
         print()
 
     # Build backend
-    if args.mock:
-        from writing_assistant.llm.mock import MockLLM
+    if args.backend == "rules":
+        from writing_assistant.llm.rule_based import RuleBasedRewriter
 
-        backend: object = MockLLM()
+        backend: object = RuleBasedRewriter()
     else:
         from writing_assistant.llm.claude_cli import ClaudeCliLLM
 

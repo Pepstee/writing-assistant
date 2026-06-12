@@ -9,7 +9,7 @@ _DEFAULT_RESPONSE = "mock response"
 
 
 class MockLLM:
-    """Deterministic LLM backend.
+    """Scripted LLM test double (lives in tests/ — never shipped).
 
     Pass a dict to key responses by exact prompt, or a list to cycle through
     responses in order (wrapping after the last entry).

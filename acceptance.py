@@ -1,9 +1,23 @@
 #!/usr/bin/env python3
-"""Acceptance demo: runs the full pipeline on a 150-word sample draft using MockLLM."""
+"""Acceptance demo: the full product, end to end, offline.
 
-from writing_assistant.llm.mock import MockLLM
+Runs the real five-pass pipeline (clarity, tone, conciseness, consistency,
+adversarial self-review) over a deliberately wordy 150-word draft using the
+deterministic rule-based backend — every edit shown is a genuine
+transformation made by shipped code, with no network and no scripted
+responses. Also demonstrates the style-profile system by learning a profile
+from a sample text and wiring it into the consistency pass.
+"""
+
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from writing_assistant.llm.rule_based import RuleBasedRewriter
 from writing_assistant.passes import ADVERSARIAL, CLARITY, CONCISENESS, CONSISTENCY, TONE
 from writing_assistant.pipeline import Pipeline
+from writing_assistant.style import StyleProfile
 
 SAMPLE_DRAFT = (
     "In the event that you are considering making utilization of our software product, "
@@ -19,52 +33,27 @@ SAMPLE_DRAFT = (
     "from the comprehensive suite of writing tools that has been made available to them."
 )
 
-MOCK_RESPONSES = [
-    # clarity
-    (
-        "If you are considering using our software, know that it offers many features "
-        "to improve your writing. These include clarity enhancement, conciseness improvements, "
-        "tone adjustment, consistency enforcement, and adversarial self-review, all available "
-        "at any time. The system is designed so that users of all skill levels can benefit "
-        "from its comprehensive writing tools."
-    ),
-    # tone
-    (
-        "If you are considering our software, it provides several features to improve your "
-        "writing: clarity enhancement, conciseness improvements, tone adjustment, consistency "
-        "enforcement, and adversarial self-review. These tools are accessible to users at all "
-        "experience levels."
-    ),
-    # conciseness
-    (
-        "Our software improves your writing through five focused features: clarity enhancement, "
-        "conciseness, tone adjustment, consistency enforcement, and adversarial self-review — "
-        "all available to users at every skill level."
-    ),
-    # consistency
-    (
-        "Our software improves writing through five features: clarity enhancement, conciseness "
-        "improvement, tone adjustment, consistency enforcement, and adversarial self-review — "
-        "available to writers at every skill level."
-    ),
-    # adversarial — no regression found; returns the same text
-    (
-        "Our software improves writing through five features: clarity enhancement, conciseness "
-        "improvement, tone adjustment, consistency enforcement, and adversarial self-review — "
-        "available to writers at every skill level."
-    ),
-]
+STYLE_SAMPLE = (
+    "We build tools that respect the reader. Every sentence earns its place. "
+    "However, brevity never excuses vagueness; therefore, each claim is concrete. "
+    "Furthermore, we prefer the active voice and plain words."
+)
 
 PASSES = [CLARITY, TONE, CONCISENESS, CONSISTENCY, ADVERSARIAL]
 
 
 def main() -> None:
-    backend = MockLLM(responses=MOCK_RESPONSES)
-    pipeline = Pipeline(passes=PASSES, backend=backend)
+    profile = StyleProfile.learn([STYLE_SAMPLE])
+    backend = RuleBasedRewriter()
+    pipeline = Pipeline(passes=PASSES, backend=backend, style_profile=profile)
 
     print("=" * 60)
-    print("Writing Assistant — Acceptance Demo")
+    print("Writing Assistant — Acceptance Demo (offline, deterministic)")
     print("=" * 60)
+
+    print("\nStyle profile learned from sample:")
+    print(profile.summary())
+
     print(f"\nOriginal draft ({len(SAMPLE_DRAFT.split())} words):")
     print(SAMPLE_DRAFT)
 
@@ -75,13 +64,26 @@ def main() -> None:
         if result.diff:
             print("Diff:")
             print(result.diff)
+        elif p.metadata.get("adversarial"):
+            print("Diff: (no changes — adversarial self-review found no further weaknesses)")
         else:
-            print("Diff: (no changes — adversarial pass found no regression)")
+            print(f"Diff: (no changes — the {p.name} pass found nothing to edit)")
 
+    final = results[-1].revised
     print("\n" + "=" * 60)
-    print("Final rewrite:")
-    print(results[-1].revised)
+    print(f"Final rewrite: ({len(final.split())} words, "
+          f"down from {len(SAMPLE_DRAFT.split())})")
+    print(final)
     print("=" * 60)
+
+    # The demo must demonstrate, not merely run: fail loudly if the pipeline
+    # did not actually tighten the draft.
+    assert len(final.split()) < len(SAMPLE_DRAFT.split()), (
+        "pipeline failed to shorten the wordy draft"
+    )
+    assert "in the event that" not in final.lower(), (
+        "clarity pass failed to remove wordy phrasing"
+    )
 
 
 if __name__ == "__main__":
