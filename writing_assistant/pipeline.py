@@ -23,6 +23,10 @@ class Pipeline:
         results: list[RewriteResult] = []
         current = text
         for p in self.passes:
+            if not p.instructions.strip():
+                raise ValueError(
+                    f"Pass '{p.name}' has empty or whitespace-only instructions."
+                )
             if p.metadata.get("adversarial"):
                 history = "\n\n".join(
                     f"[{self.passes[j].name}]\n{results[j].revised}"
