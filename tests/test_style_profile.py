@@ -8,7 +8,6 @@ Rules:
 """
 from __future__ import annotations
 
-import math
 from collections import Counter
 
 import pytest
@@ -308,7 +307,10 @@ class TestStyleProfileFit:
 
     def test_tone_fingerprint_has_five_keys(self):
         p = StyleProfile().fit(["Some text here."])
-        expected_keys = {"positivity", "negativity", "question_density", "exclaim_density", "avg_word_length"}
+        expected_keys = {
+            "positivity", "negativity", "question_density",
+            "exclaim_density", "avg_word_length",
+        }
         assert set(p.tone_fingerprint.keys()) == expected_keys
 
     def test_all_tone_fingerprint_values_are_floats(self):
@@ -531,7 +533,10 @@ class TestToneFingerprint:
     def test_longer_words_raise_avg_word_length(self):
         p_short = StyleProfile().fit(["a b c d e"])
         p_long = StyleProfile().fit(["extraordinary magnificent spectacular"])
-        assert p_long.tone_fingerprint["avg_word_length"] > p_short.tone_fingerprint["avg_word_length"]
+        assert (
+            p_long.tone_fingerprint["avg_word_length"]
+            > p_short.tone_fingerprint["avg_word_length"]
+        )
 
     def test_similarity_identical_positive_sentiment(self):
         text = "This is good and great and excellent."

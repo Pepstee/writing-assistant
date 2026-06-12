@@ -1,6 +1,6 @@
 [build-system]
 requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "writing-assistant"
@@ -11,5 +11,3 @@ dependencies = []
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["writing_assistant*"]
-
-[tool.pytest.ini_options]

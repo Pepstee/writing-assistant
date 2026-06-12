@@ -190,6 +190,19 @@ json_str = profile.to_json()
 restored = StyleProfile.from_json(json_str)
 ```
 
+## Scoring how well a text matches a style
+
+A second, finer-grained analyser lives in `writing_assistant/style_profile.py`. Where `style.StyleProfile` produces a human-readable summary for the consistency pass prompt, `style_profile.StyleProfile` builds a statistical fingerprint (bigram/trigram frequencies, connector usage, tone markers) and scores how closely any text matches it:
+
+```python
+from writing_assistant.style_profile import StyleProfile
+
+fingerprint = StyleProfile().fit([reference_text])
+score = fingerprint.similarity_score(candidate_text)  # 0.0 – 1.0
+```
+
+Use it to measure whether a pipeline rewrite drifted away from the reference style — for example, asserting `similarity_score` stays above a threshold after the consistency pass.
+
 ## Running the test suite
 
 ```bash

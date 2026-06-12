@@ -8,7 +8,9 @@ from writing_assistant.types import LLMBackend
 class ClaudeCliLLM:
     """LLM backend that shells out to the authenticated `claude` CLI."""
 
-    def __init__(self, model: str = "claude-sonnet-4-6", extra_args: list[str] | None = None) -> None:
+    def __init__(
+        self, model: str = "claude-sonnet-4-6", extra_args: list[str] | None = None
+    ) -> None:
         self.model = model
         self.extra_args = extra_args or []
 
