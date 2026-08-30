@@ -3,14 +3,14 @@
 
 Runs the real five-pass pipeline (clarity, tone, conciseness, consistency,
 adversarial self-review) over a deliberately wordy 150-word draft. Uses the
-Claude CLI backend when available, otherwise falls back to the deterministic
-rule-based backend — every edit is a genuine transformation made by shipped
-code. Also demonstrates the style-profile system by learning a profile from
-a sample text and wiring it into the consistency pass.
+deterministic rule-based backend unconditionally, so the acceptance command is
+offline and byte-reproducible even when provider CLIs are installed. Every edit
+is a genuine transformation made by shipped code. Also demonstrates the
+style-profile system by learning a profile from a sample text and wiring it
+into the consistency pass.
 """
 
 import os
-import shutil
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -22,12 +22,6 @@ from writing_assistant.style import StyleProfile
 
 
 def _make_backend():
-    if shutil.which("claude"):
-        try:
-            from writing_assistant.llm.claude_cli import ClaudeCliLLM
-            return ClaudeCliLLM(), "Claude CLI"
-        except Exception:
-            pass
     return RuleBasedRewriter(), "rule-based (offline)"
 
 SAMPLE_DRAFT = (

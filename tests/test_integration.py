@@ -9,6 +9,7 @@ All LLM calls use MockLLM; no real network calls are made.
 """
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -551,6 +552,34 @@ class TestAcceptanceScriptExitCode:
         assert result.returncode == 0, (
             f"acceptance.py exited {result.returncode}.\nstderr: {result.stderr}"
         )
+
+    def test_acceptance_script_never_invokes_an_installed_claude_cli(
+        self, tmp_path: Path
+    ) -> None:
+        fake_bin = tmp_path / "bin"
+        fake_bin.mkdir()
+        marker = tmp_path / "claude-was-invoked"
+        fake_claude = fake_bin / "claude"
+        fake_claude.write_text(
+            "#!/bin/sh\nprintf invoked > \"$FAKE_CLAUDE_MARKER\"\nexit 99\n",
+            encoding="utf-8",
+        )
+        fake_claude.chmod(0o755)
+        environment = os.environ.copy()
+        environment["PATH"] = f"{fake_bin}{os.pathsep}{environment['PATH']}"
+        environment["FAKE_CLAUDE_MARKER"] = str(marker)
+
+        result = subprocess.run(
+            [sys.executable, str(self._ACCEPTANCE_PATH)],
+            capture_output=True,
+            text=True,
+            env=environment,
+        )
+
+        assert result.returncode == 0
+        assert "rule-based (offline)" in result.stdout
+        assert "Claude CLI" not in result.stdout
+        assert not marker.exists()
 
     def test_acceptance_script_produces_final_rewrite_header(self) -> None:
         result = subprocess.run(
