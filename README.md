@@ -85,6 +85,20 @@ my_pass = Pass(
 pipeline = Pipeline(passes=[my_pass], backend=backend)
 ```
 
+`PassRegistry` provides deterministic name lookup when an application wants to
+assemble pass lists from configuration. It stores canonical `Pass` instances,
+refuses duplicate owners, and reports names in sorted order. The CLI resolves its
+five built-ins through the shared `BUILTIN_PASS_REGISTRY` rather than maintaining
+a second pass map:
+
+```python
+from writing_assistant.passes import PassRegistry
+
+registry = PassRegistry()
+registry.register("formal", my_pass)
+pipeline = Pipeline(passes=[registry.get("formal")], backend=backend)
+```
+
 ### What each built-in pass does
 
 | Pass | What it does |

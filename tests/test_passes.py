@@ -14,7 +14,15 @@ import pytest
 
 from mock_llm import MockLLM
 from writing_assistant import passes as passes_module
-from writing_assistant.passes import ADVERSARIAL, CLARITY, CONCISENESS, CONSISTENCY, TONE
+from writing_assistant.passes import (
+    ADVERSARIAL,
+    BUILTIN_PASS_REGISTRY,
+    CLARITY,
+    CONCISENESS,
+    CONSISTENCY,
+    TONE,
+    PassRegistry,
+)
 from writing_assistant.pipeline import Pipeline
 from writing_assistant.types import Pass
 
@@ -67,6 +75,57 @@ class TestPassNames:
         for p in ALL_PASSES:
             assert p.name == p.name.lower()
             assert p.name.isidentifier()
+
+
+class TestPassRegistry:
+    def test_register_and_get_return_exact_pass(self):
+        registry = PassRegistry()
+        registry.register("clarity", CLARITY)
+        assert registry.get("clarity") is CLARITY
+
+    @pytest.mark.parametrize("name", ["", None, 7])
+    def test_register_refuses_invalid_name(self, name):
+        registry = PassRegistry()
+        with pytest.raises(TypeError):
+            registry.register(name, CLARITY)
+
+    @pytest.mark.parametrize("value", [object(), object, "clarity"])
+    def test_register_refuses_non_pass_values(self, value):
+        registry = PassRegistry()
+        with pytest.raises(TypeError):
+            registry.register("bad", value)
+
+    def test_duplicate_registration_refuses_without_replacing_first(self):
+        registry = PassRegistry()
+        registry.register("slot", CLARITY)
+        with pytest.raises(ValueError, match="already registered"):
+            registry.register("slot", TONE)
+        assert registry.get("slot") is CLARITY
+
+    @pytest.mark.parametrize("name", ["", None, 7])
+    def test_get_refuses_invalid_name(self, name):
+        with pytest.raises(TypeError):
+            PassRegistry().get(name)
+
+    def test_unknown_name_reports_sorted_available_names(self):
+        registry = PassRegistry()
+        registry.register("zebra", TONE)
+        registry.register("alpha", CLARITY)
+        with pytest.raises(KeyError, match=r"\['alpha', 'zebra'\]"):
+            registry.get("missing")
+
+    def test_names_are_sorted_and_registry_instances_are_independent(self):
+        first = PassRegistry()
+        second = PassRegistry()
+        first.register("zebra", TONE)
+        first.register("alpha", CLARITY)
+        assert first.names() == ["alpha", "zebra"]
+        assert second.names() == []
+
+    def test_builtin_registry_owns_all_five_canonical_passes(self):
+        assert BUILTIN_PASS_REGISTRY.names() == sorted(p.name for p in ALL_PASSES)
+        for rewrite_pass in ALL_PASSES:
+            assert BUILTIN_PASS_REGISTRY.get(rewrite_pass.name) is rewrite_pass
 
 
 class TestPassInstructions:
@@ -282,8 +341,6 @@ class TestAcceptanceDemoReliability:
 
     def test_acceptance_demo_mock_llm_final_output_satisfies_acceptance_assertions(self):
         """The MockLLM-backed pipeline must satisfy acceptance.py's own two assertions."""
-        from writing_assistant.style import StyleProfile
-
         SAMPLE_DRAFT = (
             "In the event that you are considering making utilization of our software product, "
             "it is of the utmost importance to take into consideration the fact that there are "

@@ -10,18 +10,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-from writing_assistant.passes import ADVERSARIAL, CLARITY, CONCISENESS, CONSISTENCY, TONE
+from writing_assistant.passes import BUILTIN_PASS_REGISTRY
 from writing_assistant.pipeline import Pipeline
 from writing_assistant.style import DesiredStyleProfile, StyleProfile
 from writing_assistant.types import Pass, RewriteResult
-
-_PASS_MAP = {
-    "clarity": CLARITY,
-    "tone": TONE,
-    "conciseness": CONCISENESS,
-    "consistency": CONSISTENCY,
-    "adversarial": ADVERSARIAL,
-}
 
 _DEFAULT_PASSES = ["clarity", "tone", "conciseness", "consistency", "adversarial"]
 
@@ -108,7 +100,7 @@ def main() -> None:
         help=(
             f"comma-separated passes to run "
             f"(default: {','.join(_DEFAULT_PASSES)}; "
-            f"available: {','.join(_PASS_MAP)})"
+            f"available: {','.join(BUILTIN_PASS_REGISTRY.names())})"
         ),
     )
     parser.add_argument(
@@ -177,10 +169,13 @@ def main() -> None:
     pass_names = [p.strip() for p in args.passes.split(",") if p.strip()]
     if not pass_names:
         parser.error("--passes must contain at least one pass name")
-    unknown = [p for p in pass_names if p not in _PASS_MAP]
+    available_passes = BUILTIN_PASS_REGISTRY.names()
+    unknown = [p for p in pass_names if p not in available_passes]
     if unknown:
-        parser.error(f"unknown pass(es): {', '.join(unknown)}. Available: {', '.join(_PASS_MAP)}")
-    passes = [_PASS_MAP[n] for n in pass_names]
+        parser.error(
+            f"unknown pass(es): {', '.join(unknown)}. Available: {', '.join(available_passes)}"
+        )
+    passes = [BUILTIN_PASS_REGISTRY.get(name) for name in pass_names]
 
     # Optional style profile
     style_profile: StyleProfile | DesiredStyleProfile | None = None
