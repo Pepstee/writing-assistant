@@ -17,7 +17,7 @@ from pathlib import Path
 from mock_llm import MockLLM
 from writing_assistant.passes import ADVERSARIAL, CLARITY, CONCISENESS, CONSISTENCY, TONE
 from writing_assistant.pipeline import Pipeline
-from writing_assistant.style import StyleProfile
+from writing_assistant.style import DesiredStyleProfile, StyleProfile
 from writing_assistant.types import Pass, RewriteResult
 
 REPO_ROOT = Path(__file__).parent.parent
@@ -716,3 +716,71 @@ class TestStyleProfilePipelineIntegration:
             passes=ALL_PASSES, backend=llm_b, style_profile=None
         ).run(INPUT_DRAFT)
         assert len(results_with) == len(results_without)
+
+
+class TestDesiredStyleProfileCliIntegration:
+    def test_json_profile_is_loaded_and_reported(self, tmp_path: Path) -> None:
+        profile_path = tmp_path / "desired.json"
+        profile_path.write_text(
+            '{"tone":"friendly","formality":"semiformal",'
+            '"vocabulary":["plain"],"min_sentence_words":4,'
+            '"max_sentence_words":16}',
+            encoding="utf-8",
+        )
+        result = _run_cli(
+            "--backend",
+            "rules",
+            "--passes",
+            "clarity",
+            "--profile",
+            str(profile_path),
+            stdin="In the event that this works.\n",
+        )
+        assert result.returncode == 0
+        assert "Desired style profile loaded from" in result.stdout
+        assert "Desired tone: friendly" in result.stdout
+        assert "Desired formality: semiformal" in result.stdout
+        assert "Preferred vocabulary: plain" in result.stdout
+        assert "Sentence length: 4-16 words" in result.stdout
+
+    def test_sample_and_desired_profile_are_mutually_exclusive(
+        self, tmp_path: Path
+    ) -> None:
+        sample = tmp_path / "sample.txt"
+        sample.write_text("A sample.", encoding="utf-8")
+        profile = tmp_path / "desired.json"
+        profile.write_text("{}", encoding="utf-8")
+        result = _run_cli(
+            "--backend",
+            "rules",
+            "--sample",
+            str(sample),
+            "--profile",
+            str(profile),
+            stdin="A draft.\n",
+        )
+        assert result.returncode != 0
+        assert "not allowed with argument" in result.stderr
+
+    def test_invalid_profile_refuses_before_backend_work(self, tmp_path: Path) -> None:
+        profile = tmp_path / "desired.json"
+        profile.write_text('{"tone":"aggressive"}', encoding="utf-8")
+        result = _run_cli(
+            "--backend",
+            "rules",
+            "--profile",
+            str(profile),
+            stdin="A draft.\n",
+        )
+        assert result.returncode != 0
+        assert "Invalid profile" in result.stderr
+
+    def test_desired_profile_guidance_reaches_all_pass_prompts(self) -> None:
+        profile = DesiredStyleProfile(tone="formal", vocabulary=["specific"])
+        backend = RecordingMockLLM(SENTINEL_RESPONSES[:])
+        Pipeline(passes=ALL_PASSES, backend=backend, style_profile=profile).run(
+            INPUT_DRAFT
+        )
+        assert len(backend.calls) == len(ALL_PASSES)
+        assert all("Desired style:" in prompt for prompt in backend.calls)
+        assert all(profile.summary() in prompt for prompt in backend.calls)

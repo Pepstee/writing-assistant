@@ -181,6 +181,9 @@ _PASS_FNS = {
     "consistency": _consistency,
     "adversarial": _adversarial,
 }
+_PASS_IDENTITY_RE = re.compile(
+    r"\ARewrite pass: ([^\r\n]+)\r?\nPayload characters: ([0-9]+)\r?\n"
+)
 
 
 class RuleBasedRewriter:
@@ -188,7 +191,13 @@ class RuleBasedRewriter:
 
     def generate(self, prompt: str) -> str:
         instructions, text = self._split(prompt)
-        lowered = instructions.lower()
+        identity_match = _PASS_IDENTITY_RE.match(instructions)
+        if identity_match and identity_match.group(1) in _PASS_FNS:
+            return _PASS_FNS[identity_match.group(1)](text)
+        _, instruction_marker, pass_instructions = instructions.rpartition(
+            "\nPass instructions:\n"
+        )
+        lowered = (pass_instructions if instruction_marker else instructions).lower()
         for marker, name in _PASS_MARKERS:
             if marker in lowered:
                 return _PASS_FNS[name](text)
@@ -198,6 +207,16 @@ class RuleBasedRewriter:
     @staticmethod
     def _split(prompt: str) -> tuple[str, str]:
         """Separate the pipeline's instruction header from the text payload."""
+        identity_match = _PASS_IDENTITY_RE.match(prompt)
+        if identity_match:
+            payload_length = int(identity_match.group(2))
+            payload_start = len(prompt) - payload_length
+            head = prompt[:payload_start]
+            tail = prompt[payload_start:] if payload_length else ""
+            marker = "\nPayload:\n"
+            if payload_start >= 0 and head.endswith(marker):
+                return head[: -len(marker)], tail
+            raise ValueError("invalid length-bound rewrite payload")
         for marker in ("\nCurrent text:\n", "\nText:\n"):
             if marker in prompt:
                 head, _, tail = prompt.partition(marker)

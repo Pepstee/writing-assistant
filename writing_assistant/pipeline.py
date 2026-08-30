@@ -2,8 +2,13 @@ from __future__ import annotations
 
 import difflib
 
-from writing_assistant.style import StyleProfile
+from writing_assistant.style import DesiredStyleProfile, StyleProfile
 from writing_assistant.types import LLMBackend, Pass, RewriteResult
+
+
+_BUILT_IN_PASS_NAMES = frozenset(
+    {"clarity", "tone", "conciseness", "consistency", "adversarial"}
+)
 
 
 def _unified_diff(original: str, revised: str) -> str:
@@ -29,7 +34,7 @@ class Pipeline:
         self,
         passes: list[Pass],
         backend: LLMBackend,
-        style_profile: StyleProfile | None = None,
+        style_profile: StyleProfile | DesiredStyleProfile | None = None,
     ) -> None:
         self.passes = passes
         self.backend = backend
@@ -43,24 +48,33 @@ class Pipeline:
                 raise ValueError(
                     f"Pass '{p.name}' has empty or whitespace-only instructions."
                 )
+            guidance: str | None = None
+            if isinstance(self.style_profile, DesiredStyleProfile):
+                guidance = f"Desired style:\n{self.style_profile.summary()}"
+            elif p.name == "consistency" and self.style_profile is not None:
+                guidance = f"Style profile:\n{self.style_profile.summary()}"
+            guidance_prefix = f"{guidance}\n\n" if guidance else ""
+            pass_identity = p.name if p.name in _BUILT_IN_PASS_NAMES else "custom"
+            prompt_prefix = (
+                f"Rewrite pass: {pass_identity}\n"
+                f"Payload characters: {len(current)}\n\n"
+            )
+            instruction_block = f"Pass instructions:\n{p.instructions}"
+
             if p.metadata.get("adversarial"):
                 history = "\n\n".join(
                     f"[{self.passes[j].name}]\n{results[j].revised}"
                     for j in range(len(results))
                 )
                 prompt = (
-                    f"{p.instructions}\n\n"
+                    f"{prompt_prefix}{guidance_prefix}{instruction_block}\n\n"
                     f"Original text:\n{text}\n\n"
                     f"Accumulated rewrites:\n{history}\n\n"
-                    f"Current text:\n{current}"
+                    f"Payload:\n{current}"
                 )
             else:
-                instructions = p.instructions
-                if p.name == "consistency" and self.style_profile is not None:
-                    instructions = (
-                        f"Style profile:\n{self.style_profile.summary()}\n\n{instructions}"
-                    )
-                prompt = f"{instructions}\n\nText:\n{current}"
+                instructions = f"{guidance_prefix}{instruction_block}"
+                prompt = f"{prompt_prefix}{instructions}\n\nPayload:\n{current}"
             revised = self.backend.generate(prompt)
             diff = _unified_diff(current, revised)
             results.append(RewriteResult(original=current, revised=revised, diff=diff))

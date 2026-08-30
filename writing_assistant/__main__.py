@@ -9,7 +9,7 @@ from pathlib import Path
 
 from writing_assistant.passes import ADVERSARIAL, CLARITY, CONCISENESS, CONSISTENCY, TONE
 from writing_assistant.pipeline import Pipeline
-from writing_assistant.style import StyleProfile
+from writing_assistant.style import DesiredStyleProfile, StyleProfile
 from writing_assistant.types import Pass, RewriteResult
 
 _PASS_MAP = {
@@ -84,10 +84,19 @@ def main() -> None:
         nargs="?",
         help="text file to process (omit to read from stdin)",
     )
-    parser.add_argument(
+    profile_group = parser.add_mutually_exclusive_group()
+    profile_group.add_argument(
         "--sample",
         metavar="FILE",
         help="text file to learn style profile from (used by the consistency pass)",
+    )
+    profile_group.add_argument(
+        "--profile",
+        metavar="FILE",
+        help=(
+            "validated JSON or TOML desired-style profile; unlike --sample, "
+            "this states explicit tone, formality, vocabulary, and sentence bounds"
+        ),
     )
     parser.add_argument(
         "--passes",
@@ -149,7 +158,7 @@ def main() -> None:
     passes = [_PASS_MAP[n] for n in pass_names]
 
     # Optional style profile
-    style_profile: StyleProfile | None = None
+    style_profile: StyleProfile | DesiredStyleProfile | None = None
     style_summary: str | None = None
     if args.sample:
         try:
@@ -159,6 +168,14 @@ def main() -> None:
             parser.error(str(exc))
         style_profile = StyleProfile.learn([sample_text])
         style_summary = f"Style profile learned from {args.sample!r}:\n{style_profile.summary()}"
+    elif args.profile:
+        try:
+            style_profile = DesiredStyleProfile.from_file(args.profile)
+        except (OSError, ValueError) as exc:
+            parser.error(str(exc))
+        style_summary = (
+            f"Desired style profile loaded from {args.profile!r}:\n{style_profile.summary()}"
+        )
 
     # Build backend
     if args.backend == "rules":

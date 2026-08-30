@@ -37,6 +37,9 @@ python -m writing_assistant --backend rules --passes clarity,conciseness my_draf
 
 # also learn a style profile from a sample file
 python -m writing_assistant --backend rules --sample reference.txt my_draft.txt
+
+# or provide explicit desired style guidance from JSON or TOML
+python -m writing_assistant --profile desired-style.toml my_draft.txt
 ```
 
 Output: a per-pass diff section followed by a `Final draft:` block.
@@ -189,6 +192,32 @@ Save and reload a profile as JSON:
 json_str = profile.to_json()
 restored = StyleProfile.from_json(json_str)
 ```
+
+## Loading an explicit desired style
+
+Sample-derived evidence and operator-authored preferences remain separate. Use
+`DesiredStyleProfile` when you want to state the target tone, formality,
+vocabulary, and sentence-length bounds directly:
+
+```toml
+tone = "friendly"
+formality = "semiformal"
+vocabulary = ["plain", "specific"]
+min_sentence_words = 5
+max_sentence_words = 24
+```
+
+```python
+from writing_assistant.style import DesiredStyleProfile
+
+desired = DesiredStyleProfile.from_file("desired-style.toml")
+pipeline = Pipeline(passes=[CLARITY, TONE], backend=backend, style_profile=desired)
+```
+
+The CLI accepts the same file through `--profile`. JSON is also supported.
+Unknown fields and invalid values fail before any rewrite backend is called.
+`--profile` and the sample-derived `--sample` option are intentionally mutually
+exclusive so declared preferences are never mislabeled as learned evidence.
 
 ## Scoring how well a text matches a style
 
