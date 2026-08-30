@@ -288,6 +288,38 @@ class TestUnifiedDiffFormat:
         ]
         assert any("add this line" in line for line in plus_lines)
 
+    def test_diff_separates_changed_lines_without_terminal_newlines(self):
+        result = Pipeline(passes=[CLARITY], backend=MockLLM(["Revised text."])).run(
+            "Original text."
+        )[0]
+        lines = result.diff.splitlines()
+        assert "-Original text." in lines
+        assert "+Revised text." in lines
+        assert lines.count("\\ No newline at end of file") == 2
+
+    @pytest.mark.parametrize(
+        ("original", "revised", "missing_newline_markers"),
+        [
+            ("same", "same\n", 1),
+            ("same\n", "same", 1),
+            ("same\r\n", "same\n", 0),
+        ],
+    )
+    def test_diff_preserves_line_ending_only_changes(
+        self, original: str, revised: str, missing_newline_markers: int
+    ):
+        result = Pipeline(passes=[CLARITY], backend=MockLLM([revised])).run(original)[0]
+        assert result.original != result.revised
+        assert result.diff
+        assert result.diff.count("\\ No newline at end of file") == missing_newline_markers
+
+    def test_diff_preserves_crlf_bytes_when_line_endings_change(self):
+        result = Pipeline(passes=[CLARITY], backend=MockLLM(["same\n"])).run(
+            "same\r\n"
+        )[0]
+        assert "-same\r\n" in result.diff
+        assert "+same\n" in result.diff
+
     def test_diff_empty_when_text_unchanged(self):
         llm = MockLLM([SAMPLE_TEXT])
         results = Pipeline(passes=[CLARITY], backend=llm).run(SAMPLE_TEXT)

@@ -390,6 +390,11 @@ class TestCLIExitCode:
         result = _run_cli("--backend", "rules", "--passes", "clarity,nosuchpass")
         assert result.returncode != 0
 
+    def test_cli_exits_nonzero_when_pass_list_is_empty(self) -> None:
+        result = _run_cli("--backend", "rules", "--passes", ", ,")
+        assert result.returncode != 0
+        assert "must contain at least one pass name" in result.stderr
+
     def test_cli_stdout_contains_final_draft_header(self) -> None:
         result = _run_cli("--backend", "rules")
         assert result.returncode == 0
@@ -416,6 +421,118 @@ class TestCLIExitCode:
             f"CLI should succeed when stdin has actual content after stripping.\n"
             f"stderr: {result.stderr}"
         )
+
+    def test_default_console_output_is_byte_exact(self) -> None:
+        result = _run_cli(
+            "--backend",
+            "rules",
+            "--passes",
+            "clarity,tone",
+            stdin="A very really useful draft that is basically clear.\n",
+        )
+        expected = (
+            "\n============================================================\n"
+            "Pass: CLARITY\n"
+            "============================================================\n"
+            "(no changes)\n"
+            "\n============================================================\n"
+            "Pass: TONE\n"
+            "============================================================\n"
+            "(no changes)\n"
+            "\n============================================================\n"
+            "Final draft:\n"
+            "============================================================\n"
+            "A very really useful draft that is basically clear.\n"
+        )
+        assert result.returncode == 0
+        assert result.stdout == expected
+        assert result.stderr == ""
+
+    def test_markdown_exports_final_text_and_ordered_pass_diffs(self) -> None:
+        result = _run_cli(
+            "--backend",
+            "rules",
+            "--passes",
+            "clarity,tone,consistency",
+            "--format",
+            "markdown",
+            stdin="In the event that we can't utilize the web site.\n",
+        )
+        assert result.returncode == 0
+        assert "## Final Text" in result.stdout
+        assert "If we cannot use the website." in result.stdout
+        assert (
+            result.stdout.index("### clarity")
+            < result.stdout.index("### tone")
+            < result.stdout.index("### consistency")
+        )
+        assert "```diff" in result.stdout
+        assert "--- input" in result.stdout
+        assert "+++ revised" in result.stdout
+
+    def test_markdown_marks_a_pass_that_makes_no_change(self) -> None:
+        result = _run_cli(
+            "--backend",
+            "rules",
+            "--passes",
+            "clarity",
+            "--format",
+            "markdown",
+            stdin="Already clear.\n",
+        )
+        assert result.returncode == 0
+        assert "### clarity\n\n```diff\n(no changes)\n```" in result.stdout
+
+    def test_plain_format_emits_only_the_final_text(self) -> None:
+        result = _run_cli(
+            "--backend",
+            "rules",
+            "--passes",
+            "clarity",
+            "--format",
+            "plain",
+            stdin="In the event that this works.\n",
+        )
+        assert result.returncode == 0
+        assert result.stdout == "If this works.\n"
+        assert result.stderr == ""
+
+    def test_output_file_receives_complete_markdown_and_stdout_stays_empty(
+        self, tmp_path: Path
+    ) -> None:
+        output = tmp_path / "rewrite.md"
+        result = _run_cli(
+            "--backend",
+            "rules",
+            "--passes",
+            "clarity",
+            "--format",
+            "markdown",
+            "--output",
+            str(output),
+            stdin="In the event that this works.\n",
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+        assert result.stderr == ""
+        exported = output.read_text(encoding="utf-8")
+        assert exported.startswith("## Final Text\n")
+        assert "If this works." in exported
+        assert "## Pass Diffs" in exported
+
+    def test_output_write_error_exits_nonzero(self, tmp_path: Path) -> None:
+        result = _run_cli(
+            "--backend",
+            "rules",
+            "--passes",
+            "clarity",
+            "--output",
+            str(tmp_path),
+            stdin="Already clear.\n",
+        )
+        assert result.returncode == 1
+        assert result.stdout == ""
+        assert "error writing output" in result.stderr
 
 
 # ── Acceptance script exit-0 ───────────────────────────────────────────────────

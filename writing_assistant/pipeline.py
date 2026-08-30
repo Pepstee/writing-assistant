@@ -6,6 +6,22 @@ from writing_assistant.style import StyleProfile
 from writing_assistant.types import LLMBackend, Pass, RewriteResult
 
 
+def _unified_diff(original: str, revised: str) -> str:
+    """Return a readable diff without erasing exact line-ending changes."""
+
+    chunks: list[str] = []
+    for line in difflib.unified_diff(
+        original.splitlines(keepends=True),
+        revised.splitlines(keepends=True),
+        fromfile="input",
+        tofile="revised",
+    ):
+        chunks.append(line)
+        if line[:1] in {" ", "+", "-"} and not line.endswith(("\n", "\r")):
+            chunks.append("\n\\ No newline at end of file\n")
+    return "".join(chunks)
+
+
 class Pipeline:
     """Multi-pass rewrite pipeline accepting Pass dataclass instances."""
 
@@ -46,12 +62,7 @@ class Pipeline:
                     )
                 prompt = f"{instructions}\n\nText:\n{current}"
             revised = self.backend.generate(prompt)
-            diff = "".join(difflib.unified_diff(
-                current.splitlines(keepends=True),
-                revised.splitlines(keepends=True),
-                fromfile="input",
-                tofile="revised",
-            ))
+            diff = _unified_diff(current, revised)
             results.append(RewriteResult(original=current, revised=revised, diff=diff))
             current = revised
         return results
