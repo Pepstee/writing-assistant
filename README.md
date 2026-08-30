@@ -32,6 +32,12 @@ python -m writing_assistant my_draft.txt
 # use the offline rule-based backend (no credentials, deterministic)
 python -m writing_assistant --backend rules my_draft.txt
 
+# select a different Claude model
+python -m writing_assistant --model claude-haiku-4-5-20251001 my_draft.txt
+
+# use any local or provider CLI that reads prompts from stdin and writes the rewrite to stdout
+python -m writing_assistant --llm-command "ollama run llama3" my_draft.txt
+
 # choose specific passes
 python -m writing_assistant --backend rules --passes clarity,conciseness my_draft.txt
 
@@ -120,6 +126,23 @@ from writing_assistant.llm.rule_based import RuleBasedRewriter
 
 backend = RuleBasedRewriter()
 ```
+
+**`CommandCliLLM`** (in the existing CLI-backend owner,
+`writing_assistant/llm/claude_cli.py`) — runs any explicit argument-vector command
+without a shell, writes the exact prompt to stdin, and uses non-empty stdout as the
+rewrite:
+
+```python
+from writing_assistant.llm import CommandCliLLM
+
+backend = CommandCliLLM(["ollama", "run", "llama3"])
+```
+
+The CLI accepts the same capability through `--llm-command`. The command may also
+come from `WRITING_ASSISTANT_LLM_COMMAND`; the recovered `REWRITER_LLM_COMMAND`
+name remains supported for compatibility. Supplying a command selects this backend
+and overrides `--model`. `--backend command` makes that choice explicit, while
+`--backend rules` remains strictly offline and refuses a simultaneous command.
 
 ### Custom backend example
 

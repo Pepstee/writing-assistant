@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import argparse
 import io
+import os
+import shlex
+import subprocess
 import sys
 from pathlib import Path
 
@@ -110,11 +113,33 @@ def main() -> None:
     )
     parser.add_argument(
         "--backend",
-        choices=("claude", "rules"),
+        choices=("claude", "command", "rules"),
         default="claude",
         help=(
             "rewrite backend: 'claude' shells out to the authenticated Claude CLI; "
+            "'command' pipes prompts to --llm-command; "
             "'rules' is the deterministic offline rule-based editor (no network)"
+        ),
+    )
+    parser.add_argument(
+        "--model",
+        default=os.environ.get(
+            "WRITING_ASSISTANT_MODEL",
+            os.environ.get("REWRITER_MODEL", "claude-sonnet-4-6"),
+        ),
+        metavar="MODEL",
+        help=(
+            "Claude model name (default: claude-sonnet-4-6; may also be set "
+            "with WRITING_ASSISTANT_MODEL or legacy REWRITER_MODEL)"
+        ),
+    )
+    parser.add_argument(
+        "--llm-command",
+        default=None,
+        metavar="CMD",
+        help=(
+            "model-agnostic command whose stdin receives each prompt and whose stdout "
+            "is the rewrite; selects the command backend and overrides --model"
         ),
     )
     parser.add_argument(
@@ -179,17 +204,43 @@ def main() -> None:
 
     # Build backend
     if args.backend == "rules":
+        if args.llm_command:
+            parser.error("--llm-command cannot be combined with --backend rules")
         from writing_assistant.llm.rule_based import RuleBasedRewriter
 
         backend: object = RuleBasedRewriter()
     else:
+        llm_command = (
+            args.llm_command
+            if args.llm_command is not None
+            else os.environ.get(
+                "WRITING_ASSISTANT_LLM_COMMAND",
+                os.environ.get("REWRITER_LLM_COMMAND"),
+            )
+        )
+    if args.backend != "rules" and (args.backend == "command" or llm_command):
+        if not llm_command:
+            parser.error("--backend command requires --llm-command")
+        try:
+            command = shlex.split(llm_command)
+        except ValueError as exc:
+            parser.error(f"invalid --llm-command: {exc}")
+        if not command:
+            parser.error("--llm-command must contain an executable")
+        from writing_assistant.llm.claude_cli import CommandCliLLM
+
+        backend = CommandCliLLM(command)
+    elif args.backend != "rules":
         from writing_assistant.llm.claude_cli import ClaudeCliLLM
 
-        backend = ClaudeCliLLM()
+        backend = ClaudeCliLLM(model=args.model)
 
     # Run
     pipeline = Pipeline(passes=passes, backend=backend, style_profile=style_profile)
-    results = pipeline.run(text)
+    try:
+        results = pipeline.run(text)
+    except (OSError, subprocess.SubprocessError, RuntimeError) as exc:
+        parser.exit(1, f"writing-assistant: backend error: {exc}\n")
 
     if args.format == "markdown":
         rendered = _render_markdown(passes, results, style_summary)

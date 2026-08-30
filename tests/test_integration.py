@@ -329,12 +329,17 @@ class TestAdversarialPassFires:
 
 # ── CLI entry-point exit-code tests ───────────────────────────────────────────
 
-def _run_cli(*args: str, stdin: str = INPUT_DRAFT) -> subprocess.CompletedProcess:
+def _run_cli(
+    *args: str,
+    stdin: str = INPUT_DRAFT,
+    env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess:
     return subprocess.run(
         [sys.executable, "-m", "writing_assistant", *args],
         input=stdin,
         capture_output=True,
         text=True,
+        env=env,
     )
 
 
@@ -368,6 +373,165 @@ class TestCLIExitCode:
         assert result.returncode == 0, (
             f"CLI exited {result.returncode}.\nstderr: {result.stderr}"
         )
+
+    def test_command_backend_runs_end_to_end_over_stdio(self) -> None:
+        command = (
+            f'{sys.executable} -c "import sys; '
+            "data=sys.stdin.read(); "
+            "payload=data.rsplit(chr(10) + 'Payload:' + chr(10), 1)[1]; "
+            'sys.stdout.write(payload.upper())"'
+        )
+        result = _run_cli(
+            "--backend",
+            "command",
+            "--llm-command",
+            command,
+            "--passes",
+            "clarity",
+            "--format",
+            "plain",
+            stdin="Local command works.\n",
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout == "LOCAL COMMAND WORKS.\n"
+        assert result.stderr == ""
+
+    def test_llm_command_selects_command_backend_and_overrides_model(self) -> None:
+        command = f"{sys.executable} -c \"import sys; sys.stdout.write('rewrite')\""
+        result = _run_cli(
+            "--llm-command",
+            command,
+            "--model",
+            "must-not-be-used",
+            "--passes",
+            "clarity",
+            "--format",
+            "plain",
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout == "rewrite\n"
+
+    def test_model_flag_reaches_claude_backend(self, tmp_path: Path) -> None:
+        fake_bin = tmp_path / "bin"
+        fake_bin.mkdir()
+        claude = fake_bin / "claude"
+        claude.write_text(
+            "#!/usr/bin/env python3\n"
+            "import sys\n"
+            "model = sys.argv[sys.argv.index('--model') + 1]\n"
+            "sys.stdout.write(model)\n",
+            encoding="utf-8",
+        )
+        claude.chmod(0o700)
+        env = os.environ.copy()
+        env["PATH"] = f"{fake_bin}{os.pathsep}{env.get('PATH', '')}"
+        env.pop("WRITING_ASSISTANT_LLM_COMMAND", None)
+        env.pop("REWRITER_LLM_COMMAND", None)
+
+        result = _run_cli(
+            "--model",
+            "selected-model",
+            "--passes",
+            "clarity",
+            "--format",
+            "plain",
+            env=env,
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout == "selected-model\n"
+
+    def test_rules_backend_ignores_ambient_command_configuration(self) -> None:
+        env = os.environ.copy()
+        env["WRITING_ASSISTANT_LLM_COMMAND"] = "must-not-run"
+        result = _run_cli(
+            "--backend",
+            "rules",
+            "--passes",
+            "clarity",
+            "--format",
+            "plain",
+            stdin="In the event that this works.\n",
+            env=env,
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout == "If this works.\n"
+
+    def test_current_and_legacy_command_environment_names_work(self) -> None:
+        command = f"{sys.executable} -c \"import sys; sys.stdout.write('from-env')\""
+        for variable in ("WRITING_ASSISTANT_LLM_COMMAND", "REWRITER_LLM_COMMAND"):
+            env = os.environ.copy()
+            env.pop("WRITING_ASSISTANT_LLM_COMMAND", None)
+            env.pop("REWRITER_LLM_COMMAND", None)
+            env[variable] = command
+            result = _run_cli(
+                "--passes",
+                "clarity",
+                "--format",
+                "plain",
+                env=env,
+            )
+            assert result.returncode == 0, result.stderr
+            assert result.stdout == "from-env\n"
+
+    def test_explicit_empty_command_refuses_instead_of_using_environment(self) -> None:
+        env = os.environ.copy()
+        env["WRITING_ASSISTANT_LLM_COMMAND"] = "must-not-run"
+        result = _run_cli(
+            "--backend",
+            "command",
+            "--llm-command",
+            "",
+            "--passes",
+            "clarity",
+            env=env,
+        )
+        assert result.returncode == 2
+        assert "requires --llm-command" in result.stderr
+
+    def test_command_backend_requires_a_command(self) -> None:
+        result = _run_cli("--backend", "command", "--passes", "clarity")
+        assert result.returncode == 2
+        assert "requires --llm-command" in result.stderr
+
+    def test_rules_backend_refuses_a_command(self) -> None:
+        result = _run_cli(
+            "--backend",
+            "rules",
+            "--llm-command",
+            "model",
+            "--passes",
+            "clarity",
+        )
+        assert result.returncode == 2
+        assert "cannot be combined" in result.stderr
+
+    def test_invalid_command_quoting_refuses_before_execution(self) -> None:
+        result = _run_cli(
+            "--backend",
+            "command",
+            "--llm-command",
+            "unterminated'",
+            "--passes",
+            "clarity",
+        )
+        assert result.returncode == 2
+        assert "invalid --llm-command" in result.stderr
+
+    def test_non_utf8_command_output_is_a_controlled_backend_error(self) -> None:
+        command = f'{sys.executable} -c "import os; os.write(1, bytes([255]))"'
+        result = _run_cli(
+            "--backend",
+            "command",
+            "--llm-command",
+            command,
+            "--passes",
+            "clarity",
+        )
+        assert result.returncode == 1
+        assert result.stdout == ""
+        assert result.stderr.startswith("writing-assistant: backend error:")
+        assert "non-UTF-8 output" in result.stderr
+        assert "Traceback" not in result.stderr
 
     def test_cli_exits_nonzero_on_empty_stdin(self) -> None:
         result = _run_cli("--backend", "rules", stdin="")
