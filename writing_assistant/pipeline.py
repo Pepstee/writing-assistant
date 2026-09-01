@@ -6,9 +6,7 @@ from writing_assistant.style import DesiredStyleProfile, StyleProfile
 from writing_assistant.types import LLMBackend, Pass, RewriteResult
 
 
-_BUILT_IN_PASS_NAMES = frozenset(
-    {"clarity", "tone", "conciseness", "consistency", "adversarial"}
-)
+_BUILT_IN_PASS_NAMES = frozenset({"clarity", "tone", "conciseness", "consistency", "adversarial"})
 
 
 def _unified_diff(original: str, revised: str) -> str:
@@ -45,9 +43,7 @@ class Pipeline:
         current = text
         for p in self.passes:
             if not p.instructions.strip():
-                raise ValueError(
-                    f"Pass '{p.name}' has empty or whitespace-only instructions."
-                )
+                raise ValueError(f"Pass '{p.name}' has empty or whitespace-only instructions.")
             guidance: str | None = None
             if isinstance(self.style_profile, DesiredStyleProfile):
                 guidance = f"Desired style:\n{self.style_profile.summary()}"
@@ -55,16 +51,12 @@ class Pipeline:
                 guidance = f"Style profile:\n{self.style_profile.summary()}"
             guidance_prefix = f"{guidance}\n\n" if guidance else ""
             pass_identity = p.name if p.name in _BUILT_IN_PASS_NAMES else "custom"
-            prompt_prefix = (
-                f"Rewrite pass: {pass_identity}\n"
-                f"Payload characters: {len(current)}\n\n"
-            )
+            prompt_prefix = f"Rewrite pass: {pass_identity}\nPayload characters: {len(current)}\n\n"
             instruction_block = f"Pass instructions:\n{p.instructions}"
 
             if p.metadata.get("adversarial"):
                 history = "\n\n".join(
-                    f"[{self.passes[j].name}]\n{results[j].revised}"
-                    for j in range(len(results))
+                    f"[{self.passes[j].name}]\n{results[j].revised}" for j in range(len(results))
                 )
                 prompt = (
                     f"{prompt_prefix}{guidance_prefix}{instruction_block}\n\n"
@@ -77,6 +69,13 @@ class Pipeline:
                 prompt = f"{prompt_prefix}{instructions}\n\nPayload:\n{current}"
             revised = self.backend.generate(prompt)
             diff = _unified_diff(current, revised)
-            results.append(RewriteResult(original=current, revised=revised, diff=diff))
+            results.append(
+                RewriteResult(
+                    original=current,
+                    revised=revised,
+                    diff=diff,
+                    pass_name=p.name,
+                )
+            )
             current = revised
         return results

@@ -5,6 +5,7 @@ Zero real LLM calls: every backend is an instance of MockLLM (or a subclass
 that wraps it for call-counting).  The unit under test is Pipeline; MockLLM is
 the collaborator, never the SUT.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -31,8 +32,8 @@ SAMPLE_TEXT = "The quick brown fox jumps over the lazy dog.\n"
 # Unique sentinel responses — one per pass in DEFAULT_PASSES order.
 # Each string is distinct so tests can pinpoint which pass produced which output.
 PASS_SENTINELS: dict[str, str] = {
-    "clarity":     "Clarity-rewrite sentinel ALPHA.\n",
-    "tone":        "Tone-rewrite sentinel BETA.\n",
+    "clarity": "Clarity-rewrite sentinel ALPHA.\n",
+    "tone": "Tone-rewrite sentinel BETA.\n",
     "conciseness": "Conciseness-rewrite sentinel GAMMA.\n",
     "consistency": "Consistency-rewrite sentinel DELTA.\n",
     "adversarial": "Adversarial-rewrite sentinel EPSILON.\n",
@@ -44,6 +45,7 @@ def _sentinels_for(passes: list[Pass]) -> list[str]:
 
 
 # ── CountingMockLLM: extends MockLLM to record calls ──────────────────────────
+
 
 class CountingMockLLM(MockLLM):
     """MockLLM subclass that records how many times generate() was called."""
@@ -60,6 +62,7 @@ class CountingMockLLM(MockLLM):
 
 
 # ── TestEachPassFiresExactlyOnce ───────────────────────────────────────────────
+
 
 class TestEachPassFiresExactlyOnce:
     """Each named pass must invoke the LLM exactly once per pipeline run."""
@@ -115,15 +118,11 @@ class TestEachPassFiresExactlyOnce:
             passes = DEFAULT_PASSES[:n]
             llm = MockLLM(_sentinels_for(passes))
             results = Pipeline(passes=passes, backend=llm).run(SAMPLE_TEXT)
-            assert len(results) == n, (
-                f"Pipeline with {n} passes returned {len(results)} results"
-            )
+            assert len(results) == n, f"Pipeline with {n} passes returned {len(results)} results"
 
     def test_second_run_fires_again_independently(self):
         """Each run is independent; a second run fires passes again."""
-        llm = CountingMockLLM(
-            _sentinels_for(FOUR_NAMED_PASSES) + _sentinels_for(FOUR_NAMED_PASSES)
-        )
+        llm = CountingMockLLM(_sentinels_for(FOUR_NAMED_PASSES) + _sentinels_for(FOUR_NAMED_PASSES))
         pipeline = Pipeline(passes=FOUR_NAMED_PASSES, backend=llm)
         pipeline.run(SAMPLE_TEXT)
         pipeline.run(SAMPLE_TEXT)
@@ -131,6 +130,7 @@ class TestEachPassFiresExactlyOnce:
 
 
 # ── TestAdversarialPassIsLast ─────────────────────────────────────────────────
+
 
 class TestAdversarialPassIsLast:
     """Adversarial pass must occupy the last slot and its result must be returned."""
@@ -180,12 +180,20 @@ class TestAdversarialPassIsLast:
 
 # ── TestMutationResistanceOnPassOrdering ──────────────────────────────────────
 
+
 class TestMutationResistanceOnPassOrdering:
     """Removing any single pass from DEFAULT_PASSES must remove its RewriteResult."""
 
-    @pytest.mark.parametrize("removed_name", [
-        "clarity", "tone", "conciseness", "consistency", "adversarial",
-    ])
+    @pytest.mark.parametrize(
+        "removed_name",
+        [
+            "clarity",
+            "tone",
+            "conciseness",
+            "consistency",
+            "adversarial",
+        ],
+    )
     def test_removing_pass_reduces_result_count_by_one(self, removed_name: str):
         reduced = [p for p in DEFAULT_PASSES if p.name != removed_name]
         llm = MockLLM(_sentinels_for(reduced))
@@ -195,9 +203,16 @@ class TestMutationResistanceOnPassOrdering:
             f"got {len(results)}"
         )
 
-    @pytest.mark.parametrize("removed_name", [
-        "clarity", "tone", "conciseness", "consistency", "adversarial",
-    ])
+    @pytest.mark.parametrize(
+        "removed_name",
+        [
+            "clarity",
+            "tone",
+            "conciseness",
+            "consistency",
+            "adversarial",
+        ],
+    )
     def test_removed_pass_sentinel_absent_from_revised_texts(self, removed_name: str):
         """The sentinel response earmarked for the removed pass must not appear anywhere."""
         reduced = [p for p in DEFAULT_PASSES if p.name != removed_name]
@@ -209,9 +224,16 @@ class TestMutationResistanceOnPassOrdering:
             f"Sentinel for removed pass '{removed_name}' appeared in results: {all_revised}"
         )
 
-    @pytest.mark.parametrize("removed_name", [
-        "clarity", "tone", "conciseness", "consistency", "adversarial",
-    ])
+    @pytest.mark.parametrize(
+        "removed_name",
+        [
+            "clarity",
+            "tone",
+            "conciseness",
+            "consistency",
+            "adversarial",
+        ],
+    )
     def test_surviving_passes_sentinels_present_in_order(self, removed_name: str):
         """Every surviving pass must produce its sentinel response, in pass order."""
         reduced = [p for p in DEFAULT_PASSES if p.name != removed_name]
@@ -237,6 +259,7 @@ class TestMutationResistanceOnPassOrdering:
 
 # ── TestUnifiedDiffFormat ─────────────────────────────────────────────────────
 
+
 class TestUnifiedDiffFormat:
     """Diff fields must use standard unified-diff format when text changes."""
 
@@ -254,12 +277,8 @@ class TestUnifiedDiffFormat:
         llm = MockLLM(_sentinels_for(DEFAULT_PASSES))
         results = Pipeline(passes=DEFAULT_PASSES, backend=llm).run(SAMPLE_TEXT)
         for i, (p, result) in enumerate(zip(DEFAULT_PASSES, results)):
-            assert "---" in result.diff, (
-                f"Pass '{p.name}' (index {i}) diff missing '---'"
-            )
-            assert "+++" in result.diff, (
-                f"Pass '{p.name}' (index {i}) diff missing '+++'"
-            )
+            assert "---" in result.diff, f"Pass '{p.name}' (index {i}) diff missing '---'"
+            assert "+++" in result.diff, f"Pass '{p.name}' (index {i}) diff missing '+++'"
 
     def test_diff_contains_hunk_header(self):
         llm = MockLLM(["Different text entirely.\n"])
@@ -272,7 +291,8 @@ class TestUnifiedDiffFormat:
         llm = MockLLM([revised])
         results = Pipeline(passes=[CLARITY], backend=llm).run(original)
         minus_lines = [
-            line for line in results[0].diff.splitlines()
+            line
+            for line in results[0].diff.splitlines()
             if line.startswith("-") and not line.startswith("---")
         ]
         assert any("remove this line" in line for line in minus_lines)
@@ -283,7 +303,8 @@ class TestUnifiedDiffFormat:
         llm = MockLLM([revised])
         results = Pipeline(passes=[CLARITY], backend=llm).run(original)
         plus_lines = [
-            line for line in results[0].diff.splitlines()
+            line
+            for line in results[0].diff.splitlines()
             if line.startswith("+") and not line.startswith("+++")
         ]
         assert any("add this line" in line for line in plus_lines)
@@ -314,9 +335,7 @@ class TestUnifiedDiffFormat:
         assert result.diff.count("\\ No newline at end of file") == missing_newline_markers
 
     def test_diff_preserves_crlf_bytes_when_line_endings_change(self):
-        result = Pipeline(passes=[CLARITY], backend=MockLLM(["same\n"])).run(
-            "same\r\n"
-        )[0]
+        result = Pipeline(passes=[CLARITY], backend=MockLLM(["same\n"])).run("same\r\n")[0]
         assert "-same\r\n" in result.diff
         assert "+same\n" in result.diff
 
@@ -342,6 +361,7 @@ class TestUnifiedDiffFormat:
 
 
 # ── TestRewriteResultFields ───────────────────────────────────────────────────
+
 
 class TestRewriteResultFields:
     """RewriteResult original/revised fields must be correctly populated."""
@@ -382,8 +402,22 @@ class TestRewriteResultFields:
         assert results[0].revised == "REVISED_SENTINEL\n"
         assert results[0].original != results[0].revised
 
+    def test_result_retains_explicit_pass_identity(self):
+        results = Pipeline(
+            passes=FOUR_NAMED_PASSES,
+            backend=MockLLM(_sentinels_for(FOUR_NAMED_PASSES)),
+        ).run(SAMPLE_TEXT)
+        assert [result.pass_name for result in results] == [
+            rewrite_pass.name for rewrite_pass in FOUR_NAMED_PASSES
+        ]
+
+    def test_three_field_constructor_remains_backward_compatible(self):
+        result = RewriteResult("before", "after", "diff")
+        assert result.pass_name is None
+
 
 # ── TestAdversarialPassPromptConstruction ─────────────────────────────────────
+
 
 class TestAdversarialPassPromptConstruction:
     """Adversarial pass must receive a special prompt with accumulated history."""
@@ -466,6 +500,7 @@ class TestAdversarialPassPromptConstruction:
 
 # ── TestStyleProfileIntegration ───────────────────────────────────────────────
 
+
 class TestStyleProfileIntegration:
     """Consistency pass must incorporate the StyleProfile summary when provided."""
 
@@ -512,6 +547,7 @@ class TestStyleProfileIntegration:
 
 
 # ── TestEdgeCases ─────────────────────────────────────────────────────────────
+
 
 class TestEdgeCases:
     """Boundary conditions and unusual inputs."""
@@ -574,6 +610,7 @@ class TestEdgeCases:
 
 # ── TestMockLLMBehavior ───────────────────────────────────────────────────────
 
+
 class TestMockLLMBehavior:
     """Verify MockLLM properties relied upon by the pipeline tests above."""
 
@@ -602,6 +639,30 @@ class TestMockLLMBehavior:
         llm = MockLLM({"known": "value"})
         result = llm.generate("unknown prompt")
         assert result == "mock response"
+
+    def test_fragment_matching_is_explicitly_opt_in(self):
+        responses = {"payload marker": "fragment response"}
+        prompt = "header\npayload marker and more"
+        assert MockLLM(responses).generate(prompt) == "mock response"
+        assert MockLLM(responses, fragment_match=True).generate(prompt) == ("fragment response")
+
+    def test_fragment_matching_preserves_mapping_order(self):
+        llm = MockLLM(
+            {"payload": "broad", "payload marker": "specific"},
+            fragment_match=True,
+        )
+        assert llm.generate("payload marker") == "broad"
+
+    def test_last_line_fallback_is_explicitly_opt_in(self):
+        llm = MockLLM({}, fragment_match=True, fallback="last-line")
+        assert llm.generate("header\nfinal payload") == "[mock] final payload"
+        assert llm.generate("   ") == "[mock] "
+
+    def test_opt_in_dict_features_refuse_cycle_mode(self):
+        with pytest.raises(ValueError, match="require dict mode"):
+            MockLLM(["response"], fragment_match=True)
+        with pytest.raises(ValueError, match="require dict mode"):
+            MockLLM(["response"], fallback="last-line")
 
     def test_two_mock_llm_instances_are_independent(self):
         llm1 = MockLLM(["a", "b"])

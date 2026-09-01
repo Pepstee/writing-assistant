@@ -20,3 +20,4 @@ class RewriteResult:
     original: str
     revised: str
     diff: str
+    pass_name: str | None = None
