@@ -9,6 +9,7 @@ All LLM calls use MockLLM; no real network calls are made.
 """
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -16,7 +17,7 @@ from pathlib import Path
 from mock_llm import MockLLM
 from writing_assistant.passes import ADVERSARIAL, CLARITY, CONCISENESS, CONSISTENCY, TONE
 from writing_assistant.pipeline import Pipeline
-from writing_assistant.style import StyleProfile
+from writing_assistant.style import DesiredStyleProfile, StyleProfile
 from writing_assistant.types import Pass, RewriteResult
 
 REPO_ROOT = Path(__file__).parent.parent
@@ -328,12 +329,17 @@ class TestAdversarialPassFires:
 
 # ── CLI entry-point exit-code tests ───────────────────────────────────────────
 
-def _run_cli(*args: str, stdin: str = INPUT_DRAFT) -> subprocess.CompletedProcess:
+def _run_cli(
+    *args: str,
+    stdin: str = INPUT_DRAFT,
+    env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess:
     return subprocess.run(
         [sys.executable, "-m", "writing_assistant", *args],
         input=stdin,
         capture_output=True,
         text=True,
+        env=env,
     )
 
 
@@ -368,6 +374,165 @@ class TestCLIExitCode:
             f"CLI exited {result.returncode}.\nstderr: {result.stderr}"
         )
 
+    def test_command_backend_runs_end_to_end_over_stdio(self) -> None:
+        command = (
+            f'{sys.executable} -c "import sys; '
+            "data=sys.stdin.read(); "
+            "payload=data.rsplit(chr(10) + 'Payload:' + chr(10), 1)[1]; "
+            'sys.stdout.write(payload.upper())"'
+        )
+        result = _run_cli(
+            "--backend",
+            "command",
+            "--llm-command",
+            command,
+            "--passes",
+            "clarity",
+            "--format",
+            "plain",
+            stdin="Local command works.\n",
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout == "LOCAL COMMAND WORKS.\n"
+        assert result.stderr == ""
+
+    def test_llm_command_selects_command_backend_and_overrides_model(self) -> None:
+        command = f"{sys.executable} -c \"import sys; sys.stdout.write('rewrite')\""
+        result = _run_cli(
+            "--llm-command",
+            command,
+            "--model",
+            "must-not-be-used",
+            "--passes",
+            "clarity",
+            "--format",
+            "plain",
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout == "rewrite\n"
+
+    def test_model_flag_reaches_claude_backend(self, tmp_path: Path) -> None:
+        fake_bin = tmp_path / "bin"
+        fake_bin.mkdir()
+        claude = fake_bin / "claude"
+        claude.write_text(
+            "#!/usr/bin/env python3\n"
+            "import sys\n"
+            "model = sys.argv[sys.argv.index('--model') + 1]\n"
+            "sys.stdout.write(model)\n",
+            encoding="utf-8",
+        )
+        claude.chmod(0o700)
+        env = os.environ.copy()
+        env["PATH"] = f"{fake_bin}{os.pathsep}{env.get('PATH', '')}"
+        env.pop("WRITING_ASSISTANT_LLM_COMMAND", None)
+        env.pop("REWRITER_LLM_COMMAND", None)
+
+        result = _run_cli(
+            "--model",
+            "selected-model",
+            "--passes",
+            "clarity",
+            "--format",
+            "plain",
+            env=env,
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout == "selected-model\n"
+
+    def test_rules_backend_ignores_ambient_command_configuration(self) -> None:
+        env = os.environ.copy()
+        env["WRITING_ASSISTANT_LLM_COMMAND"] = "must-not-run"
+        result = _run_cli(
+            "--backend",
+            "rules",
+            "--passes",
+            "clarity",
+            "--format",
+            "plain",
+            stdin="In the event that this works.\n",
+            env=env,
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout == "If this works.\n"
+
+    def test_current_and_legacy_command_environment_names_work(self) -> None:
+        command = f"{sys.executable} -c \"import sys; sys.stdout.write('from-env')\""
+        for variable in ("WRITING_ASSISTANT_LLM_COMMAND", "REWRITER_LLM_COMMAND"):
+            env = os.environ.copy()
+            env.pop("WRITING_ASSISTANT_LLM_COMMAND", None)
+            env.pop("REWRITER_LLM_COMMAND", None)
+            env[variable] = command
+            result = _run_cli(
+                "--passes",
+                "clarity",
+                "--format",
+                "plain",
+                env=env,
+            )
+            assert result.returncode == 0, result.stderr
+            assert result.stdout == "from-env\n"
+
+    def test_explicit_empty_command_refuses_instead_of_using_environment(self) -> None:
+        env = os.environ.copy()
+        env["WRITING_ASSISTANT_LLM_COMMAND"] = "must-not-run"
+        result = _run_cli(
+            "--backend",
+            "command",
+            "--llm-command",
+            "",
+            "--passes",
+            "clarity",
+            env=env,
+        )
+        assert result.returncode == 2
+        assert "requires --llm-command" in result.stderr
+
+    def test_command_backend_requires_a_command(self) -> None:
+        result = _run_cli("--backend", "command", "--passes", "clarity")
+        assert result.returncode == 2
+        assert "requires --llm-command" in result.stderr
+
+    def test_rules_backend_refuses_a_command(self) -> None:
+        result = _run_cli(
+            "--backend",
+            "rules",
+            "--llm-command",
+            "model",
+            "--passes",
+            "clarity",
+        )
+        assert result.returncode == 2
+        assert "cannot be combined" in result.stderr
+
+    def test_invalid_command_quoting_refuses_before_execution(self) -> None:
+        result = _run_cli(
+            "--backend",
+            "command",
+            "--llm-command",
+            "unterminated'",
+            "--passes",
+            "clarity",
+        )
+        assert result.returncode == 2
+        assert "invalid --llm-command" in result.stderr
+
+    def test_non_utf8_command_output_is_a_controlled_backend_error(self) -> None:
+        command = f'{sys.executable} -c "import os; os.write(1, bytes([255]))"'
+        result = _run_cli(
+            "--backend",
+            "command",
+            "--llm-command",
+            command,
+            "--passes",
+            "clarity",
+        )
+        assert result.returncode == 1
+        assert result.stdout == ""
+        assert result.stderr.startswith("writing-assistant: backend error:")
+        assert "non-UTF-8 output" in result.stderr
+        assert "Traceback" not in result.stderr
+
     def test_cli_exits_nonzero_on_empty_stdin(self) -> None:
         result = _run_cli("--backend", "rules", stdin="")
         assert result.returncode != 0, (
@@ -389,6 +554,11 @@ class TestCLIExitCode:
     def test_cli_exits_nonzero_on_mixed_valid_and_unknown_passes(self) -> None:
         result = _run_cli("--backend", "rules", "--passes", "clarity,nosuchpass")
         assert result.returncode != 0
+
+    def test_cli_exits_nonzero_when_pass_list_is_empty(self) -> None:
+        result = _run_cli("--backend", "rules", "--passes", ", ,")
+        assert result.returncode != 0
+        assert "must contain at least one pass name" in result.stderr
 
     def test_cli_stdout_contains_final_draft_header(self) -> None:
         result = _run_cli("--backend", "rules")
@@ -417,6 +587,118 @@ class TestCLIExitCode:
             f"stderr: {result.stderr}"
         )
 
+    def test_default_console_output_is_byte_exact(self) -> None:
+        result = _run_cli(
+            "--backend",
+            "rules",
+            "--passes",
+            "clarity,tone",
+            stdin="A very really useful draft that is basically clear.\n",
+        )
+        expected = (
+            "\n============================================================\n"
+            "Pass: CLARITY\n"
+            "============================================================\n"
+            "(no changes)\n"
+            "\n============================================================\n"
+            "Pass: TONE\n"
+            "============================================================\n"
+            "(no changes)\n"
+            "\n============================================================\n"
+            "Final draft:\n"
+            "============================================================\n"
+            "A very really useful draft that is basically clear.\n"
+        )
+        assert result.returncode == 0
+        assert result.stdout == expected
+        assert result.stderr == ""
+
+    def test_markdown_exports_final_text_and_ordered_pass_diffs(self) -> None:
+        result = _run_cli(
+            "--backend",
+            "rules",
+            "--passes",
+            "clarity,tone,consistency",
+            "--format",
+            "markdown",
+            stdin="In the event that we can't utilize the web site.\n",
+        )
+        assert result.returncode == 0
+        assert "## Final Text" in result.stdout
+        assert "If we cannot use the website." in result.stdout
+        assert (
+            result.stdout.index("### clarity")
+            < result.stdout.index("### tone")
+            < result.stdout.index("### consistency")
+        )
+        assert "```diff" in result.stdout
+        assert "--- input" in result.stdout
+        assert "+++ revised" in result.stdout
+
+    def test_markdown_marks_a_pass_that_makes_no_change(self) -> None:
+        result = _run_cli(
+            "--backend",
+            "rules",
+            "--passes",
+            "clarity",
+            "--format",
+            "markdown",
+            stdin="Already clear.\n",
+        )
+        assert result.returncode == 0
+        assert "### clarity\n\n```diff\n(no changes)\n```" in result.stdout
+
+    def test_plain_format_emits_only_the_final_text(self) -> None:
+        result = _run_cli(
+            "--backend",
+            "rules",
+            "--passes",
+            "clarity",
+            "--format",
+            "plain",
+            stdin="In the event that this works.\n",
+        )
+        assert result.returncode == 0
+        assert result.stdout == "If this works.\n"
+        assert result.stderr == ""
+
+    def test_output_file_receives_complete_markdown_and_stdout_stays_empty(
+        self, tmp_path: Path
+    ) -> None:
+        output = tmp_path / "rewrite.md"
+        result = _run_cli(
+            "--backend",
+            "rules",
+            "--passes",
+            "clarity",
+            "--format",
+            "markdown",
+            "--output",
+            str(output),
+            stdin="In the event that this works.\n",
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+        assert result.stderr == ""
+        exported = output.read_text(encoding="utf-8")
+        assert exported.startswith("## Final Text\n")
+        assert "If this works." in exported
+        assert "## Pass Diffs" in exported
+
+    def test_output_write_error_exits_nonzero(self, tmp_path: Path) -> None:
+        result = _run_cli(
+            "--backend",
+            "rules",
+            "--passes",
+            "clarity",
+            "--output",
+            str(tmp_path),
+            stdin="Already clear.\n",
+        )
+        assert result.returncode == 1
+        assert result.stdout == ""
+        assert "error writing output" in result.stderr
+
 
 # ── Acceptance script exit-0 ───────────────────────────────────────────────────
 
@@ -434,6 +716,34 @@ class TestAcceptanceScriptExitCode:
         assert result.returncode == 0, (
             f"acceptance.py exited {result.returncode}.\nstderr: {result.stderr}"
         )
+
+    def test_acceptance_script_never_invokes_an_installed_claude_cli(
+        self, tmp_path: Path
+    ) -> None:
+        fake_bin = tmp_path / "bin"
+        fake_bin.mkdir()
+        marker = tmp_path / "claude-was-invoked"
+        fake_claude = fake_bin / "claude"
+        fake_claude.write_text(
+            "#!/bin/sh\nprintf invoked > \"$FAKE_CLAUDE_MARKER\"\nexit 99\n",
+            encoding="utf-8",
+        )
+        fake_claude.chmod(0o755)
+        environment = os.environ.copy()
+        environment["PATH"] = f"{fake_bin}{os.pathsep}{environment['PATH']}"
+        environment["FAKE_CLAUDE_MARKER"] = str(marker)
+
+        result = subprocess.run(
+            [sys.executable, str(self._ACCEPTANCE_PATH)],
+            capture_output=True,
+            text=True,
+            env=environment,
+        )
+
+        assert result.returncode == 0
+        assert "rule-based (offline)" in result.stdout
+        assert "Claude CLI" not in result.stdout
+        assert not marker.exists()
 
     def test_acceptance_script_produces_final_rewrite_header(self) -> None:
         result = subprocess.run(
@@ -570,3 +880,71 @@ class TestStyleProfilePipelineIntegration:
             passes=ALL_PASSES, backend=llm_b, style_profile=None
         ).run(INPUT_DRAFT)
         assert len(results_with) == len(results_without)
+
+
+class TestDesiredStyleProfileCliIntegration:
+    def test_json_profile_is_loaded_and_reported(self, tmp_path: Path) -> None:
+        profile_path = tmp_path / "desired.json"
+        profile_path.write_text(
+            '{"tone":"friendly","formality":"semiformal",'
+            '"vocabulary":["plain"],"min_sentence_words":4,'
+            '"max_sentence_words":16}',
+            encoding="utf-8",
+        )
+        result = _run_cli(
+            "--backend",
+            "rules",
+            "--passes",
+            "clarity",
+            "--profile",
+            str(profile_path),
+            stdin="In the event that this works.\n",
+        )
+        assert result.returncode == 0
+        assert "Desired style profile loaded from" in result.stdout
+        assert "Desired tone: friendly" in result.stdout
+        assert "Desired formality: semiformal" in result.stdout
+        assert "Preferred vocabulary: plain" in result.stdout
+        assert "Sentence length: 4-16 words" in result.stdout
+
+    def test_sample_and_desired_profile_are_mutually_exclusive(
+        self, tmp_path: Path
+    ) -> None:
+        sample = tmp_path / "sample.txt"
+        sample.write_text("A sample.", encoding="utf-8")
+        profile = tmp_path / "desired.json"
+        profile.write_text("{}", encoding="utf-8")
+        result = _run_cli(
+            "--backend",
+            "rules",
+            "--sample",
+            str(sample),
+            "--profile",
+            str(profile),
+            stdin="A draft.\n",
+        )
+        assert result.returncode != 0
+        assert "not allowed with argument" in result.stderr
+
+    def test_invalid_profile_refuses_before_backend_work(self, tmp_path: Path) -> None:
+        profile = tmp_path / "desired.json"
+        profile.write_text('{"tone":"aggressive"}', encoding="utf-8")
+        result = _run_cli(
+            "--backend",
+            "rules",
+            "--profile",
+            str(profile),
+            stdin="A draft.\n",
+        )
+        assert result.returncode != 0
+        assert "Invalid profile" in result.stderr
+
+    def test_desired_profile_guidance_reaches_all_pass_prompts(self) -> None:
+        profile = DesiredStyleProfile(tone="formal", vocabulary=["specific"])
+        backend = RecordingMockLLM(SENTINEL_RESPONSES[:])
+        Pipeline(passes=ALL_PASSES, backend=backend, style_profile=profile).run(
+            INPUT_DRAFT
+        )
+        assert len(backend.calls) == len(ALL_PASSES)
+        assert all("Desired style:" in prompt for prompt in backend.calls)
+        assert all(profile.summary() in prompt for prompt in backend.calls)

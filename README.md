@@ -32,11 +32,20 @@ python -m writing_assistant my_draft.txt
 # use the offline rule-based backend (no credentials, deterministic)
 python -m writing_assistant --backend rules my_draft.txt
 
+# select a different Claude model
+python -m writing_assistant --model claude-haiku-4-5-20251001 my_draft.txt
+
+# use any local or provider CLI that reads prompts from stdin and writes the rewrite to stdout
+python -m writing_assistant --llm-command "ollama run llama3" my_draft.txt
+
 # choose specific passes
 python -m writing_assistant --backend rules --passes clarity,conciseness my_draft.txt
 
 # also learn a style profile from a sample file
 python -m writing_assistant --backend rules --sample reference.txt my_draft.txt
+
+# or provide explicit desired style guidance from JSON or TOML
+python -m writing_assistant --profile desired-style.toml my_draft.txt
 ```
 
 Output: a per-pass diff section followed by a `Final draft:` block.
@@ -74,6 +83,20 @@ my_pass = Pass(
     instructions="Rewrite the text in formal academic prose.",
 )
 pipeline = Pipeline(passes=[my_pass], backend=backend)
+```
+
+`PassRegistry` provides deterministic name lookup when an application wants to
+assemble pass lists from configuration. It stores canonical `Pass` instances,
+refuses duplicate owners, and reports names in sorted order. The CLI resolves its
+five built-ins through the shared `BUILTIN_PASS_REGISTRY` rather than maintaining
+a second pass map:
+
+```python
+from writing_assistant.passes import PassRegistry
+
+registry = PassRegistry()
+registry.register("formal", my_pass)
+pipeline = Pipeline(passes=[registry.get("formal")], backend=backend)
 ```
 
 ### What each built-in pass does
@@ -117,6 +140,23 @@ from writing_assistant.llm.rule_based import RuleBasedRewriter
 
 backend = RuleBasedRewriter()
 ```
+
+**`CommandCliLLM`** (in the existing CLI-backend owner,
+`writing_assistant/llm/claude_cli.py`) — runs any explicit argument-vector command
+without a shell, writes the exact prompt to stdin, and uses non-empty stdout as the
+rewrite:
+
+```python
+from writing_assistant.llm import CommandCliLLM
+
+backend = CommandCliLLM(["ollama", "run", "llama3"])
+```
+
+The CLI accepts the same capability through `--llm-command`. The command may also
+come from `WRITING_ASSISTANT_LLM_COMMAND`; the recovered `REWRITER_LLM_COMMAND`
+name remains supported for compatibility. Supplying a command selects this backend
+and overrides `--model`. `--backend command` makes that choice explicit, while
+`--backend rules` remains strictly offline and refuses a simultaneous command.
 
 ### Custom backend example
 
@@ -189,6 +229,32 @@ Save and reload a profile as JSON:
 json_str = profile.to_json()
 restored = StyleProfile.from_json(json_str)
 ```
+
+## Loading an explicit desired style
+
+Sample-derived evidence and operator-authored preferences remain separate. Use
+`DesiredStyleProfile` when you want to state the target tone, formality,
+vocabulary, and sentence-length bounds directly:
+
+```toml
+tone = "friendly"
+formality = "semiformal"
+vocabulary = ["plain", "specific"]
+min_sentence_words = 5
+max_sentence_words = 24
+```
+
+```python
+from writing_assistant.style import DesiredStyleProfile
+
+desired = DesiredStyleProfile.from_file("desired-style.toml")
+pipeline = Pipeline(passes=[CLARITY, TONE], backend=backend, style_profile=desired)
+```
+
+The CLI accepts the same file through `--profile`. JSON is also supported.
+Unknown fields and invalid values fail before any rewrite backend is called.
+`--profile` and the sample-derived `--sample` option are intentionally mutually
+exclusive so declared preferences are never mislabeled as learned evidence.
 
 ## Scoring how well a text matches a style
 

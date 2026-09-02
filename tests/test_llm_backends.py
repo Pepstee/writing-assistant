@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from writing_assistant.llm.claude_cli import ClaudeCliLLM
+from writing_assistant.llm.claude_cli import CommandCliLLM, ClaudeCliLLM, LLMBackendError
 from mock_llm import MockLLM
 from writing_assistant.types import LLMBackend
 
@@ -131,3 +131,43 @@ class TestClaudeCliLLM:
     def test_satisfies_llm_backend_protocol(self):
         backend: LLMBackend = ClaudeCliLLM()
         assert callable(backend.generate)
+
+
+class TestCommandCliLLM:
+    @patch("writing_assistant.llm.claude_cli.subprocess.run")
+    def test_passes_exact_prompt_over_stdin_without_a_shell(self, run):
+        run.return_value = _completed("  local rewrite  \n")
+        backend = CommandCliLLM(["ollama", "run", "llama3"], timeout=17)
+
+        assert backend.generate("exact prompt\n") == "local rewrite"
+        assert run.call_args.args[0] == ["ollama", "run", "llama3"]
+        assert run.call_args.kwargs == {
+            "input": "exact prompt\n",
+            "capture_output": True,
+            "text": True,
+            "check": True,
+            "timeout": 17.0,
+        }
+
+    @pytest.mark.parametrize("command", [[], "ollama run llama3"])
+    def test_refuses_non_argument_vector_commands(self, command):
+        with pytest.raises(ValueError):
+            CommandCliLLM(command)
+
+    @patch("writing_assistant.llm.claude_cli.subprocess.run")
+    def test_refuses_empty_output(self, run):
+        run.return_value = _completed(" \n")
+        with pytest.raises(LLMBackendError, match="returned no output"):
+            CommandCliLLM(["model"]).generate("prompt")
+
+    @patch("writing_assistant.llm.claude_cli.subprocess.run")
+    def test_reports_nonzero_exit_without_losing_stderr(self, run):
+        run.side_effect = subprocess.CalledProcessError(7, ["model"], stderr="model unavailable")
+        with pytest.raises(LLMBackendError, match="exited 7.*model unavailable"):
+            CommandCliLLM(["model"]).generate("prompt")
+
+    @patch("writing_assistant.llm.claude_cli.subprocess.run")
+    def test_reports_timeout(self, run):
+        run.side_effect = subprocess.TimeoutExpired(["model"], 3)
+        with pytest.raises(LLMBackendError, match="timed out"):
+            CommandCliLLM(["model"], timeout=3).generate("prompt")
