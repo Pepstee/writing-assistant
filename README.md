@@ -1,5 +1,20 @@
 # Writing Assistant
 
+## ArtVault installation
+
+The working source lives in this workspace (`/srv/artvault/projects/writing-assistant/workspace`). From here, run:
+
+```bash
+python3 acceptance.py                                # offline demo
+python3 -m writing_assistant --backend rules draft.txt  # offline rewriting
+```
+
+The sealed baseline is preserved separately in `../releases/37d43929f147eb23b8a169038f740843a0359658`.
+
+Validation: 513 tests passed on both Mac and Linux; offline acceptance and plain/Markdown/console exports passed. Claude and other model backends require separate installation and authentication; these migration checks made no provider calls.
+
+---
+
 A lightweight, multi-pass text rewriting tool with a pluggable LLM backend and statistical style analysis. Feed it a draft; it runs it through up to five sequential editing passes — clarity, tone, conciseness, consistency, and adversarial self-review — and shows a unified diff for each one.
 
 ## Installation
