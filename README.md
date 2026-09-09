@@ -52,7 +52,10 @@ Output: a per-pass diff section followed by a `Final draft:` block.
 
 ## Configuring passes
 
-Available passes: `clarity`, `tone`, `conciseness`, `consistency`, `adversarial`.
+Available default passes: `clarity`, `tone`, `conciseness`, `consistency`, `adversarial`.
+The optional terminal `critique` pass returns a review report instead of another
+rewrite. It requires a model or command backend; the offline rule engine refuses
+to present mechanical rewriting as a critique.
 
 ### Python API
 
@@ -276,3 +279,53 @@ pytest tests/
 ```
 
 The suite covers the pipeline, all five passes, both shipped backends (the rule engine directly; the Claude CLI backend with its subprocess boundary patched), style profile logic, CLI exit codes, and the acceptance script. No network calls are made: pipeline-level tests inject a scripted test double that lives in `tests/mock_llm.py` and is never shipped.
+
+
+## Capability consolidation (September 2026)
+
+This repository is the canonical implementation. The comparison covered the
+current agentic checkout, its `b9a249ef9720` worktree, archived Writing Assistant
+(`0c16ca8`), archived Human Writer (`416f625`), and the earlier ArtVault checkout
+(`ae7a6cb`). The ArtVault changes match the existing local pass-name and test-double
+recovery. They are retained here, with their original remote checkout preserved.
+
+Recovered capabilities include per-pass provenance, fragment-matching test
+responses, declared JSON/TOML style guidance, model-agnostic commands, plain and
+Markdown file exports, configurable Claude executable and timeout, empty-response
+rejection, failed-pass attribution and meaning-preservation instructions.
+Claude prompts use stdin, and both command backends share the same failure handling.
+
+The old package names and aggregate result wrappers are replaced by the canonical
+`writing_assistant` API. `Pipeline([]).run(text)` returns an empty result list,
+so callers using an empty pass list must keep their original text themselves.
+Unused donor configuration fields and generated mutation-test copies are omitted.
+No personal drafts, learned personal profiles or credentials belong in the source
+migration. The original Mac copies and earlier ArtVault checkout are retained.
+
+Verification uses synthetic text, the real offline acceptance entrypoint, CLI
+exports, and deterministic subprocess-boundary tests. These checks do not establish
+live provider quality or authenticated Claude availability on the destination.
+The accompanying graph indexes Python source and synthetic tests; semantic document
+coverage remains partial.
+
+
+### Recovered extension modes
+
+An executable custom pass can supply `executor(text, profile, backend) -> str`.
+The pipeline records its pass name and diff like any other pass. The executor
+receives the actual profile and backend; it may transform text without calling a
+model. For example:
+
+```python
+trim = Pass(name="trim", instructions="", executor=lambda text, profile, backend: text.strip())
+results = Pipeline([trim], backend).run("  Synthetic draft.  ")
+```
+
+For critique without rewriting, select `--passes clarity,critique` with a command
+or Claude backend. Critique must be last. It sees the original text, prior rewrites
+and diffs, and the final result contains the report. The usual five-pass default
+still ends with an improved draft.
+
+Use `--format plain` to export just the final draft or report, `--format markdown`
+for the result with pass diffs, and `--output PATH` to write a file. The default
+`console` format remains suitable for interactive reading.

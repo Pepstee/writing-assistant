@@ -14,6 +14,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from mock_llm import MockLLM
 from writing_assistant.passes import ADVERSARIAL, CLARITY, CONCISENESS, CONSISTENCY, TONE
 from writing_assistant.pipeline import Pipeline
@@ -948,3 +950,38 @@ class TestDesiredStyleProfileCliIntegration:
         assert len(backend.calls) == len(ALL_PASSES)
         assert all("Desired style:" in prompt for prompt in backend.calls)
         assert all(profile.summary() in prompt for prompt in backend.calls)
+
+
+@pytest.mark.parametrize("output_format", ["plain", "markdown", "console"])
+def test_critique_cli_uses_real_local_command(output_format):
+    import shlex
+    script = (
+        "import sys; p=sys.stdin.read(); "
+        "print('Specific synthetic critique.' if p.startswith('Rewrite pass: critique') "
+        "and 'Diff:' in p and 'Revised synthetic.' in p else 'Revised synthetic.')"
+    )
+    command = shlex.join([sys.executable, "-c", script])
+    result = _run_cli("--backend", "command", "--llm-command", command,
+                      "--passes", "clarity,critique", "--format", output_format,
+                      stdin="Original synthetic.")
+    assert result.returncode == 0, result.stderr
+    assert "Specific synthetic critique." in result.stdout
+    if output_format == "markdown":
+        assert "## Critique Report" in result.stdout
+        assert "## Final Text" not in result.stdout
+    elif output_format == "console":
+        assert "Critique report:" in result.stdout
+        assert "Final draft:" not in result.stdout
+        assert "rewriting to address" not in result.stdout
+    else:
+        assert result.stdout == "Specific synthetic critique.\n"
+
+
+def test_cli_refuses_nonterminal_and_offline_critique():
+    invalid = _run_cli("--backend", "rules", "--passes", "critique,clarity")
+    assert invalid.returncode != 0
+    assert "final pass" in invalid.stderr
+    offline = _run_cli("--backend", "rules", "--passes", "critique")
+    assert offline.returncode != 0
+    assert "require a model or command backend" in offline.stderr
+    assert offline.stdout == ""

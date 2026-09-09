@@ -20,6 +20,7 @@ from writing_assistant.passes import (
     CLARITY,
     CONCISENESS,
     CONSISTENCY,
+    CRITIQUE,
     TONE,
     PassRegistry,
 )
@@ -57,7 +58,7 @@ class TestAllFivePassesExist:
             name for name in vars(passes_module)
             if isinstance(getattr(passes_module, name), Pass)
         }
-        assert exported == set(EXPECTED_NAMES), (
+        assert exported == set(EXPECTED_NAMES) | {"CRITIQUE"}, (
             f"Unexpected Pass exports: {sorted(exported ^ set(EXPECTED_NAMES))}"
         )
 
@@ -123,7 +124,7 @@ class TestPassRegistry:
         assert second.names() == []
 
     def test_builtin_registry_owns_all_five_canonical_passes(self):
-        assert BUILTIN_PASS_REGISTRY.names() == sorted(p.name for p in ALL_PASSES)
+        assert BUILTIN_PASS_REGISTRY.names() == sorted(p.name for p in [*ALL_PASSES, CRITIQUE])
         for rewrite_pass in ALL_PASSES:
             assert BUILTIN_PASS_REGISTRY.get(rewrite_pass.name) is rewrite_pass
 

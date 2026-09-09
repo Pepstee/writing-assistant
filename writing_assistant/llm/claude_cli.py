@@ -14,15 +14,21 @@ class ClaudeCliLLM:
     """LLM backend that shells out to the authenticated `claude` CLI."""
 
     def __init__(
-        self, model: str = "claude-sonnet-4-6", extra_args: list[str] | None = None
+        self, model: str = "claude-sonnet-4-6", extra_args: list[str] | None = None,
+        *, binary: str = "claude", timeout: float = 120,
     ) -> None:
         self.model = model
         self.extra_args = extra_args or []
+        self.binary = binary
+        self.timeout = timeout
+        # Reuse the command backend's validation and failure handling.
+        CommandCliLLM([binary], timeout=timeout)
 
     def generate(self, prompt: str) -> str:
-        cmd = ["claude", "--model", self.model, *self.extra_args, "-p", prompt]
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        return result.stdout.strip()
+        return CommandCliLLM(
+            [self.binary, "--model", self.model, *self.extra_args, "-p"],
+            timeout=self.timeout,
+        ).generate(prompt)
 
 
 class CommandCliLLM:

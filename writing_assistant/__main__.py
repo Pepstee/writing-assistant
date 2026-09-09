@@ -31,7 +31,9 @@ def _render_console(
         print(f"\n{'=' * 60}", file=output)
         print(f"Pass: {rewrite_pass.name.upper()}", file=output)
         print("=" * 60, file=output)
-        if rewrite_pass.metadata.get("adversarial"):
+        if rewrite_pass.metadata.get("critique_only"):
+            print("Critique-only review: reporting problems without rewriting.", file=output)
+        elif rewrite_pass.metadata.get("adversarial"):
             print(
                 "Adversarial review: identifying weaknesses and rewriting to address them.",
                 file=output,
@@ -39,7 +41,7 @@ def _render_console(
         print(result.diff if result.diff else "(no changes)", file=output)
 
     print(f"\n{'=' * 60}", file=output)
-    print("Final draft:", file=output)
+    print("Critique report:" if passes[-1].metadata.get("critique_only") else "Final draft:", file=output)
     print("=" * 60, file=output)
     print(results[-1].revised, file=output)
     return output.getvalue()
@@ -53,7 +55,8 @@ def _render_markdown(
     lines: list[str] = []
     if style_summary is not None:
         lines.extend(("## Style Profile", "", style_summary, ""))
-    lines.extend(("## Final Text", "", "```", results[-1].revised.rstrip("\n"), "```", ""))
+    final_heading = "## Critique Report" if passes[-1].metadata.get("critique_only") else "## Final Text"
+    lines.extend((final_heading, "", "```", results[-1].revised.rstrip("\n"), "```", ""))
     lines.extend(("## Pass Diffs", ""))
     for rewrite_pass, result in zip(passes, results):
         lines.extend(
@@ -176,6 +179,9 @@ def main() -> None:
             f"unknown pass(es): {', '.join(unknown)}. Available: {', '.join(available_passes)}"
         )
     passes = [BUILTIN_PASS_REGISTRY.get(name) for name in pass_names]
+
+    if any(p.metadata.get("critique_only") for p in passes[:-1]):
+        parser.error("a critique-only pass must be the final pass")
 
     # Optional style profile
     style_profile: StyleProfile | DesiredStyleProfile | None = None

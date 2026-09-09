@@ -1,4 +1,4 @@
-"""The five built-in rewrite passes.
+"""The five default rewrite passes and optional critique-only pass.
 
 Each pass is a plain :class:`~writing_assistant.types.Pass` dataclass instance;
 the pipeline turns its ``instructions`` into the LLM prompt. The adversarial
@@ -56,7 +56,7 @@ CLARITY = Pass(
     name="clarity",
     instructions=(
         "Rewrite the following text to improve clarity. "
-        "Use plain language, avoid jargon, and make every sentence easy to understand."
+        "Use plain language, avoid jargon, and make every sentence easy to understand. Preserve the original meaning and facts."
     ),
 )
 
@@ -64,7 +64,7 @@ TONE = Pass(
     name="tone",
     instructions=(
         "Rewrite the following text to achieve a professional, respectful tone "
-        "appropriate for a general audience."
+        "appropriate for a general audience. Preserve the original meaning and facts."
     ),
 )
 
@@ -80,7 +80,7 @@ CONCISENESS = Pass(
 CONSISTENCY = Pass(
     name="consistency",
     instructions=(
-        "Rewrite the following text to ensure consistent terminology, voice, and style throughout."
+        "Rewrite the following text to ensure consistent terminology, voice, and style throughout. Preserve the original meaning and facts."
     ),
 )
 
@@ -95,7 +95,19 @@ ADVERSARIAL = Pass(
 )
 
 
+CRITIQUE = Pass(
+    name="critique",
+    instructions=(
+        "Act as a critical editor reviewing the original text and full rewrite sequence. "
+        "Return a critique-only report listing specific problems, regressions, unresolved "
+        "inconsistencies and missed opportunities. Do not rewrite the text. "
+        "Ground each criticism in the supplied original, revisions and diffs."
+    ),
+    metadata={"adversarial": True, "critique_only": True},
+)
+
+
 BUILTIN_PASS_REGISTRY = PassRegistry()
-for _pass in (CLARITY, TONE, CONCISENESS, CONSISTENCY, ADVERSARIAL):
+for _pass in (CLARITY, TONE, CONCISENESS, CONSISTENCY, ADVERSARIAL, CRITIQUE):
     BUILTIN_PASS_REGISTRY.register(_pass.name, _pass)
 del _pass

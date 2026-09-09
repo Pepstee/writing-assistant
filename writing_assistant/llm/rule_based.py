@@ -192,6 +192,8 @@ class RuleBasedRewriter:
     def generate(self, prompt: str) -> str:
         instructions, text = self._split(prompt)
         identity_match = _PASS_IDENTITY_RE.match(instructions)
+        if identity_match and identity_match.group(1) == "critique":
+            raise RuntimeError("critique-only reports require a model or command backend")
         if identity_match and identity_match.group(1) in _PASS_FNS:
             return _PASS_FNS[identity_match.group(1)](text)
         _, instruction_marker, pass_instructions = instructions.rpartition(

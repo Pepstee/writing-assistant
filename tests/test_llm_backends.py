@@ -85,7 +85,9 @@ class TestClaudeCliLLM:
         ClaudeCliLLM().generate("my prompt")
         cmd = run.call_args.args[0]
         assert cmd[0] == "claude"
-        assert cmd[-2:] == ["-p", "my prompt"]
+        assert cmd[-1] == "-p"
+        assert run.call_args.kwargs["input"] == "my prompt"
+        assert run.call_args.kwargs["timeout"] == 120.0
 
     @patch("writing_assistant.llm.claude_cli.subprocess.run")
     def test_default_model_passed_via_flag(self, run):
@@ -106,7 +108,8 @@ class TestClaudeCliLLM:
         ClaudeCliLLM(extra_args=["--max-turns", "1"]).generate("p")
         cmd = run.call_args.args[0]
         assert cmd[3:5] == ["--max-turns", "1"]
-        assert cmd[-2:] == ["-p", "p"]
+        assert cmd[-1] == "-p"
+        assert run.call_args.kwargs["input"] == "p"
 
     @patch("writing_assistant.llm.claude_cli.subprocess.run")
     def test_returns_stripped_stdout(self, run):
@@ -125,7 +128,7 @@ class TestClaudeCliLLM:
     @patch("writing_assistant.llm.claude_cli.subprocess.run")
     def test_cli_failure_propagates(self, run):
         run.side_effect = subprocess.CalledProcessError(1, ["claude"])
-        with pytest.raises(subprocess.CalledProcessError):
+        with pytest.raises(LLMBackendError, match="exited 1"):
             ClaudeCliLLM().generate("p")
 
     def test_satisfies_llm_backend_protocol(self):
@@ -171,3 +174,18 @@ class TestCommandCliLLM:
         run.side_effect = subprocess.TimeoutExpired(["model"], 3)
         with pytest.raises(LLMBackendError, match="timed out"):
             CommandCliLLM(["model"], timeout=3).generate("prompt")
+
+
+@pytest.mark.parametrize("failure", ["empty", "timeout", "missing"])
+@patch("writing_assistant.llm.claude_cli.subprocess.run")
+def test_default_claude_rejects_unusable_response(run, failure):
+    if failure == "empty":
+        run.return_value = _completed("  ")
+    elif failure == "timeout":
+        run.side_effect = subprocess.TimeoutExpired(["custom-claude"], 2)
+    else:
+        run.side_effect = FileNotFoundError("custom-claude")
+    with pytest.raises(LLMBackendError):
+        ClaudeCliLLM(binary="custom-claude", timeout=2).generate("draft")
+    assert run.call_args.args[0][0] == "custom-claude"
+    assert run.call_args.kwargs["timeout"] == 2.0
