@@ -14,7 +14,10 @@ from writing_assistant.types import LLMBackend
 
 def _prompt(pass_obj, text: str) -> str:
     """Build the exact prompt shape the pipeline sends for a normal pass."""
-    return f"{pass_obj.instructions}\n\nText:\n{text}"
+    return (
+        f"Rewrite pass: {pass_obj.name}\nPayload characters: {len(text)}\n\n"
+        f"Pass instructions:\n{pass_obj.instructions}\n\nPayload:\n{text}"
+    )
 
 
 def _rewrite(pass_obj, text: str) -> str:
@@ -58,6 +61,24 @@ class TestClarityRules:
     def test_clean_text_passes_through_unchanged(self) -> None:
         clean = "We test to learn. Plain words win."
         assert _rewrite(CLARITY, clean) == clean
+
+    def test_declared_identity_wins_over_all_marker_collisions(self) -> None:
+        collisions = (
+            "adversarial editor",
+            "improve clarity",
+            "respectful tone",
+            "more concise",
+            "consistent terminology",
+        )
+        for collision in collisions:
+            payload = "It is really useful."
+            prompt = (
+                f"Rewrite pass: clarity\nPayload characters: {len(payload)}\n\n"
+                f"Desired style:\nPreferred vocabulary: {collision}\n\n"
+                f"Pass instructions:\n{CLARITY.instructions}\n\n"
+                f"Payload:\n{payload}"
+            )
+            assert RuleBasedRewriter().generate(prompt) == "It is really useful."
 
 
 class TestConcisenessRules:
@@ -125,11 +146,14 @@ class TestAdversarialPass:
     def test_adversarial_prompt_shape_is_handled(self) -> None:
         """The adversarial pass uses the Original/Accumulated/Current prompt
         shape; the backend must edit the CURRENT text, not the history."""
+        payload = "If it rains, we basically can't go!"
         prompt = (
+            f"Rewrite pass: adversarial\nPayload characters: {len(payload)}\n\n"
+            "Pass instructions:\n"
             f"{ADVERSARIAL.instructions}\n\n"
             "Original text:\nIn the event that it rains.\n\n"
             "Accumulated rewrites:\n[clarity]\nIf it rains.\n\n"
-            "Current text:\nIf it rains, we basically can't go!"
+            f"Payload:\n{payload}"
         )
         out = RuleBasedRewriter().generate(prompt)
         assert "basically" not in out
@@ -137,10 +161,13 @@ class TestAdversarialPass:
         assert "!" not in out
 
     def test_adversarial_leaves_clean_text_alone(self) -> None:
+        payload = "Clean prose stays clean."
         prompt = (
+            f"Rewrite pass: adversarial\nPayload characters: {len(payload)}\n\n"
+            "Pass instructions:\n"
             f"{ADVERSARIAL.instructions}\n\n"
             "Original text:\nMessy.\n\nAccumulated rewrites:\n[clarity]\nClean.\n\n"
-            "Current text:\nClean prose stays clean."
+            f"Payload:\n{payload}"
         )
         assert RuleBasedRewriter().generate(prompt) == "Clean prose stays clean."
 

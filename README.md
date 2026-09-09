@@ -1,5 +1,20 @@
 # Writing Assistant
 
+## ArtVault installation
+
+The working source lives in this workspace (`/srv/artvault/projects/writing-assistant/workspace`). From here, run:
+
+```bash
+python3 acceptance.py                                # offline demo
+python3 -m writing_assistant --backend rules draft.txt  # offline rewriting
+```
+
+The sealed baseline is preserved separately in `../releases/37d43929f147eb23b8a169038f740843a0359658`.
+
+Validation: 513 tests passed on both Mac and Linux; offline acceptance and plain/Markdown/console exports passed. Claude and other model backends require separate installation and authentication; these migration checks made no provider calls.
+
+---
+
 A lightweight, multi-pass text rewriting tool with a pluggable LLM backend and statistical style analysis. Feed it a draft; it runs it through up to five sequential editing passes — clarity, tone, conciseness, consistency, and adversarial self-review — and shows a unified diff for each one.
 
 ## Installation
@@ -32,18 +47,30 @@ python -m writing_assistant my_draft.txt
 # use the offline rule-based backend (no credentials, deterministic)
 python -m writing_assistant --backend rules my_draft.txt
 
+# select a different Claude model
+python -m writing_assistant --model claude-haiku-4-5-20251001 my_draft.txt
+
+# use any local or provider CLI that reads prompts from stdin and writes the rewrite to stdout
+python -m writing_assistant --llm-command "ollama run llama3" my_draft.txt
+
 # choose specific passes
 python -m writing_assistant --backend rules --passes clarity,conciseness my_draft.txt
 
 # also learn a style profile from a sample file
 python -m writing_assistant --backend rules --sample reference.txt my_draft.txt
+
+# or provide explicit desired style guidance from JSON or TOML
+python -m writing_assistant --profile desired-style.toml my_draft.txt
 ```
 
 Output: a per-pass diff section followed by a `Final draft:` block.
 
 ## Configuring passes
 
-Available passes: `clarity`, `tone`, `conciseness`, `consistency`, `adversarial`.
+Available default passes: `clarity`, `tone`, `conciseness`, `consistency`, `adversarial`.
+The optional terminal `critique` pass returns a review report instead of another
+rewrite. It requires a model or command backend; the offline rule engine refuses
+to present mechanical rewriting as a critique.
 
 ### Python API
 
@@ -74,6 +101,20 @@ my_pass = Pass(
     instructions="Rewrite the text in formal academic prose.",
 )
 pipeline = Pipeline(passes=[my_pass], backend=backend)
+```
+
+`PassRegistry` provides deterministic name lookup when an application wants to
+assemble pass lists from configuration. It stores canonical `Pass` instances,
+refuses duplicate owners, and reports names in sorted order. The CLI resolves its
+five built-ins through the shared `BUILTIN_PASS_REGISTRY` rather than maintaining
+a second pass map:
+
+```python
+from writing_assistant.passes import PassRegistry
+
+registry = PassRegistry()
+registry.register("formal", my_pass)
+pipeline = Pipeline(passes=[registry.get("formal")], backend=backend)
 ```
 
 ### What each built-in pass does
@@ -117,6 +158,23 @@ from writing_assistant.llm.rule_based import RuleBasedRewriter
 
 backend = RuleBasedRewriter()
 ```
+
+**`CommandCliLLM`** (in the existing CLI-backend owner,
+`writing_assistant/llm/claude_cli.py`) — runs any explicit argument-vector command
+without a shell, writes the exact prompt to stdin, and uses non-empty stdout as the
+rewrite:
+
+```python
+from writing_assistant.llm import CommandCliLLM
+
+backend = CommandCliLLM(["ollama", "run", "llama3"])
+```
+
+The CLI accepts the same capability through `--llm-command`. The command may also
+come from `WRITING_ASSISTANT_LLM_COMMAND`; the recovered `REWRITER_LLM_COMMAND`
+name remains supported for compatibility. Supplying a command selects this backend
+and overrides `--model`. `--backend command` makes that choice explicit, while
+`--backend rules` remains strictly offline and refuses a simultaneous command.
 
 ### Custom backend example
 
@@ -190,6 +248,32 @@ json_str = profile.to_json()
 restored = StyleProfile.from_json(json_str)
 ```
 
+## Loading an explicit desired style
+
+Sample-derived evidence and operator-authored preferences remain separate. Use
+`DesiredStyleProfile` when you want to state the target tone, formality,
+vocabulary, and sentence-length bounds directly:
+
+```toml
+tone = "friendly"
+formality = "semiformal"
+vocabulary = ["plain", "specific"]
+min_sentence_words = 5
+max_sentence_words = 24
+```
+
+```python
+from writing_assistant.style import DesiredStyleProfile
+
+desired = DesiredStyleProfile.from_file("desired-style.toml")
+pipeline = Pipeline(passes=[CLARITY, TONE], backend=backend, style_profile=desired)
+```
+
+The CLI accepts the same file through `--profile`. JSON is also supported.
+Unknown fields and invalid values fail before any rewrite backend is called.
+`--profile` and the sample-derived `--sample` option are intentionally mutually
+exclusive so declared preferences are never mislabeled as learned evidence.
+
 ## Scoring how well a text matches a style
 
 A second, finer-grained analyser lives in `writing_assistant/style_profile.py`. Where `style.StyleProfile` produces a human-readable summary for the consistency pass prompt, `style_profile.StyleProfile` builds a statistical fingerprint (bigram/trigram frequencies, connector usage, tone markers) and scores how closely any text matches it:
@@ -210,3 +294,53 @@ pytest tests/
 ```
 
 The suite covers the pipeline, all five passes, both shipped backends (the rule engine directly; the Claude CLI backend with its subprocess boundary patched), style profile logic, CLI exit codes, and the acceptance script. No network calls are made: pipeline-level tests inject a scripted test double that lives in `tests/mock_llm.py` and is never shipped.
+
+
+## Capability consolidation (September 2026)
+
+This repository is the canonical implementation. The comparison covered the
+current agentic checkout, its `b9a249ef9720` worktree, archived Writing Assistant
+(`0c16ca8`), archived Human Writer (`416f625`), and the earlier ArtVault checkout
+(`ae7a6cb`). The ArtVault changes match the existing local pass-name and test-double
+recovery. They are retained here, with their original remote checkout preserved.
+
+Recovered capabilities include per-pass provenance, fragment-matching test
+responses, declared JSON/TOML style guidance, model-agnostic commands, plain and
+Markdown file exports, configurable Claude executable and timeout, empty-response
+rejection, failed-pass attribution and meaning-preservation instructions.
+Claude prompts use stdin, and both command backends share the same failure handling.
+
+The old package names and aggregate result wrappers are replaced by the canonical
+`writing_assistant` API. `Pipeline([]).run(text)` returns an empty result list,
+so callers using an empty pass list must keep their original text themselves.
+Unused donor configuration fields and generated mutation-test copies are omitted.
+No personal drafts, learned personal profiles or credentials belong in the source
+migration. The original Mac copies and earlier ArtVault checkout are retained.
+
+Verification uses synthetic text, the real offline acceptance entrypoint, CLI
+exports, and deterministic subprocess-boundary tests. These checks do not establish
+live provider quality or authenticated Claude availability on the destination.
+The accompanying graph indexes Python source and synthetic tests; semantic document
+coverage remains partial.
+
+
+### Recovered extension modes
+
+An executable custom pass can supply `executor(text, profile, backend) -> str`.
+The pipeline records its pass name and diff like any other pass. The executor
+receives the actual profile and backend; it may transform text without calling a
+model. For example:
+
+```python
+trim = Pass(name="trim", instructions="", executor=lambda text, profile, backend: text.strip())
+results = Pipeline([trim], backend).run("  Synthetic draft.  ")
+```
+
+For critique without rewriting, select `--passes clarity,critique` with a command
+or Claude backend. Critique must be last. It sees the original text, prior rewrites
+and diffs, and the final result contains the report. The usual five-pass default
+still ends with an improved draft.
+
+Use `--format plain` to export just the final draft or report, `--format markdown`
+for the result with pass diffs, and `--output PATH` to write a file. The default
+`console` format remains suitable for interactive reading.

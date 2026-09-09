@@ -1,0 +1,102 @@
+{
+  "/Users/admin/Documents/agentic-orchestrator/projects/writing-assistant/acceptance.py": {
+    "mtime": 1788118240.2327614,
+    "ast_hash": "6faa2a96e2db57e180da9de80781e269",
+    "semantic_hash": ""
+  },
+  "/Users/admin/Documents/agentic-orchestrator/projects/writing-assistant/tests/mock_llm.py": {
+    "mtime": 1788249998.643274,
+    "ast_hash": "d2ec979c3a54c9414698f9844827c50e",
+    "semantic_hash": ""
+  },
+  "/Users/admin/Documents/agentic-orchestrator/projects/writing-assistant/tests/test_integration.py": {
+    "mtime": 1788935600.719382,
+    "ast_hash": "899bd37ef944d186b84b35dae8c99867",
+    "semantic_hash": ""
+  },
+  "/Users/admin/Documents/agentic-orchestrator/projects/writing-assistant/tests/test_llm_backends.py": {
+    "mtime": 1788935425.165017,
+    "ast_hash": "69e161fb0f4b54faf6b2b9cd11cbc5e3",
+    "semantic_hash": ""
+  },
+  "/Users/admin/Documents/agentic-orchestrator/projects/writing-assistant/tests/test_passes.py": {
+    "mtime": 1788935540.2364624,
+    "ast_hash": "3c290ad6e99d17b452cfa36c4e2612df",
+    "semantic_hash": ""
+  },
+  "/Users/admin/Documents/agentic-orchestrator/projects/writing-assistant/tests/test_pipeline.py": {
+    "mtime": 1788935587.2698681,
+    "ast_hash": "b1d57cbbd79bbc92ce0e66d6770d1353",
+    "semantic_hash": ""
+  },
+  "/Users/admin/Documents/agentic-orchestrator/projects/writing-assistant/tests/test_rule_based.py": {
+    "mtime": 1788119875.7507224,
+    "ast_hash": "3c6a3503af92fd3167527278e9b701ea",
+    "semantic_hash": ""
+  },
+  "/Users/admin/Documents/agentic-orchestrator/projects/writing-assistant/tests/test_style.py": {
+    "mtime": 1788119862.0571826,
+    "ast_hash": "b61b680ac8ac1e1a91614504be89c48a",
+    "semantic_hash": ""
+  },
+  "/Users/admin/Documents/agentic-orchestrator/projects/writing-assistant/tests/test_style_profile.py": {
+    "mtime": 1781282025.6754937,
+    "ast_hash": "a7fb57bee7fab57acbc5959d4cbf7682",
+    "semantic_hash": ""
+  },
+  "/Users/admin/Documents/agentic-orchestrator/projects/writing-assistant/writing_assistant/__init__.py": {
+    "mtime": 1780444591.9741223,
+    "ast_hash": "4867131295172353fe6c2295851defc7",
+    "semantic_hash": ""
+  },
+  "/Users/admin/Documents/agentic-orchestrator/projects/writing-assistant/writing_assistant/__main__.py": {
+    "mtime": 1788935540.235823,
+    "ast_hash": "592d406b66c811035475b6cd514c75a0",
+    "semantic_hash": ""
+  },
+  "/Users/admin/Documents/agentic-orchestrator/projects/writing-assistant/writing_assistant/llm/__init__.py": {
+    "mtime": 1788120927.2852385,
+    "ast_hash": "0b07cd57024b5e1ce4256b5c5c9f707b",
+    "semantic_hash": ""
+  },
+  "/Users/admin/Documents/agentic-orchestrator/projects/writing-assistant/writing_assistant/llm/claude_cli.py": {
+    "mtime": 1788935425.1637936,
+    "ast_hash": "cb7360a784faa62f011cdc2206c5edd9",
+    "semantic_hash": ""
+  },
+  "/Users/admin/Documents/agentic-orchestrator/projects/writing-assistant/writing_assistant/llm/rule_based.py": {
+    "mtime": 1788935540.2362301,
+    "ast_hash": "c5c4d3bb14255d2393a3f42cff2d2889",
+    "semantic_hash": ""
+  },
+  "/Users/admin/Documents/agentic-orchestrator/projects/writing-assistant/writing_assistant/passes.py": {
+    "mtime": 1788935540.2354228,
+    "ast_hash": "e99dbd183fc93c92376ae519df9e17a0",
+    "semantic_hash": ""
+  },
+  "/Users/admin/Documents/agentic-orchestrator/projects/writing-assistant/writing_assistant/pipeline.py": {
+    "mtime": 1788935627.6187503,
+    "ast_hash": "a0a758a871fd06bc917db69f6fa4e0b1",
+    "semantic_hash": ""
+  },
+  "/Users/admin/Documents/agentic-orchestrator/projects/writing-assistant/writing_assistant/style.py": {
+    "mtime": 1788119514.3758264,
+    "ast_hash": "08688c96b4f8d6b25559bbf993ee5481",
+    "semantic_hash": ""
+  },
+  "/Users/admin/Documents/agentic-orchestrator/projects/writing-assistant/writing_assistant/style_profile.py": {
+    "mtime": 1780503360.8854291,
+    "ast_hash": "0d0f49e85d438494fcaf3cad9997e16a",
+    "semantic_hash": ""
+  },
+  "/Users/admin/Documents/agentic-orchestrator/projects/writing-assistant/writing_assistant/types.py": {
+    "mtime": 1788935540.2349768,
+    "ast_hash": "4551fe6eaa3f19cc058e9eefc5f97357",
+    "semantic_hash": ""
+  },
+  "/Users/admin/Documents/agentic-orchestrator/projects/writing-assistant/README.md": {
+    "mtime": 1788935631.606689,
+    "ast_hash": "d734e9315792854fb9cfe8c541734d38",
+    "semantic_hash": ""
+  }
+}
